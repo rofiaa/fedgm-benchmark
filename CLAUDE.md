@@ -75,6 +75,15 @@ cannot take an external data frame. Therefore:
   not FedAvg in this code.
 - `MW_estimation(..., scale=True)` fits Theta on unscaled X but predicts on scaled X → mismatch.
   Keep `scale=False` (default) or standardize X before calling.
+- `ipw_function(..., "Hajek")` is applied **per site with the global ê**, then sites are
+  averaged with n_k/n. Within a site, Σ W/ê(X) does not estimate n_k (E[e_k/e | H=k] ≠ 1),
+  so this Hajek is inconsistent: mini MC bias ≈ −1.0 in DGP B where MW is well specified;
+  Hajek normalized over the pooled sample is unbiased there. HT (used in the paper) is fine.
+- `generate_multivariate_mixtures_of_normals` (DGP B) uses `np.NaN`, removed in NumPy 2;
+  `src/estimators/_authors.py` restores the alias before importing.
+- The notebook's DGP A uses mu_3 = (3,3,3,1,..) (true ATE ≈ 9.79); the paper's Table 3 has
+  (2,2,2,1,..) (≈ 8.44), which matches Fig. 2's true-ATE line (≈ 8.7) much better.
+  `src/dgps/authors.py` exposes both (`mu3_first`), plus n_k / n from the paper.
 - No standard errors are returned. We compute SEs ourselves: influence-function (sandwich) SE for
   IPW/AIPW, and/or bootstrap — needed for CI coverage.
 - `FedCaus_Obs/notebooks/simulations.ipynb` reproduces Fig. 2 (no / poor / good overlap × DGP A/B)

@@ -8,6 +8,8 @@ import importlib
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from src.r_env import ensure_r_home
 
 SCRIPTS_DIR = (
@@ -36,6 +38,10 @@ def dgp_fed():
                     "the authors' DGP_Fed needs its own scripts/utils.py."
                 )
         ensure_r_home()  # DGP_Fed imports rpy2.robjects at module level
+        # generate_multivariate_mixtures_of_normals (DGP B) uses np.NaN, removed in
+        # NumPy 2.0; it is the only removed name the authors' code uses.
+        if "NaN" not in np.__dict__:
+            np.NaN = np.nan
         if str(SCRIPTS_DIR) not in sys.path:
             sys.path.insert(0, str(SCRIPTS_DIR))
         # Keep the submodule clean: no __pycache__ written into it.
