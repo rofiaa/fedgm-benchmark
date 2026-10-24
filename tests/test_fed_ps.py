@@ -3,7 +3,24 @@
 import numpy as np
 import pytest
 
-from src.estimators.fed_ps import estimate
+from src.estimators.fed_ps import _ipw_terms_hajek, estimate
+
+
+def test_hajek_terms_average_to_tau(dgp_a_poor):
+    _, _, df = dgp_a_poor
+    out = estimate(df, ipw_type="Hajek")
+    masks = [df["H"] == k for k in range(3)]
+    tau_k = []
+    for mask in masks:
+        W, Y, e = df["W"][mask], df["Y"][mask], out["e_hat"][mask]
+        tau_k.append(np.sum(W * Y / e) / np.sum(W / e)
+                     - np.sum((1 - W) * Y / (1 - e)) / np.sum((1 - W) / (1 - e)))
+
+    psi = _ipw_terms_hajek(df["W"].to_numpy(), df["Y"].to_numpy(),
+                           out["e_hat"].to_numpy(), masks, tau_k)
+
+    assert np.isclose(psi.mean(), out["tau"], rtol=1e-12)
+    assert np.isclose(np.std(psi, ddof=1) / np.sqrt(len(psi)), out["se"], rtol=1e-12)
 
 
 def test_single_arm_site_gets_constant_local_ps(dgp_a_poor):

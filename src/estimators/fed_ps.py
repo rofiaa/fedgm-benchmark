@@ -22,7 +22,7 @@ from src.estimators.balance import smd
 _IMPLEMENTED = {
     "mw": {"logistic"},
     "local_ps": {"logistic"},
-    "ipw_type": {"HT"},
+    "ipw_type": {"HT", "Hajek"},
     "aipw": {False},
 }
 
@@ -42,7 +42,8 @@ def estimate(
     mw: membership-weight model for P(H|X). "logistic" = authors' MW_estimation_pooled
         (a centralized multinomial fit, the default in their code).
     local_ps: local propensity model e_k(x). "logistic" = authors' compute_gamma.
-    ipw_type: "HT" (Horvitz-Thompson).
+    ipw_type: "HT" (Horvitz-Thompson) or "Hajek". As in the authors' code, Hajek
+        normalizes the weights within each site, then sites are averaged with n_k/n.
     mw_intercept: include an intercept in the membership model (the authors' IPW path
         does; their AIPW path does not).
     seed: reserved for the stochastic variants; unused by the deterministic ones.
@@ -76,7 +77,11 @@ def estimate(
     ]
     tau = float(np.average(tau_k, weights=n_k))
 
-    psi = _ipw_terms_ht(data["W"].to_numpy(), data["Y"].to_numpy(), e_hat)
+    W, Y = data["W"].to_numpy(), data["Y"].to_numpy()
+    if ipw_type == "HT":
+        psi = _ipw_terms_ht(W, Y, e_hat)
+    else:
+        psi = _ipw_terms_hajek(W, Y, e_hat, site_masks, tau_k)
     se = _if_se(psi)
 
     weights = np.where(data["W"] == 1, 1 / e_hat, 1 / (1 - e_hat))
@@ -163,6 +168,28 @@ def _site_order_numeric(proba, K):
 
 def _ipw_terms_ht(W, Y, e):
     return W * Y / e - (1 - W) * Y / (1 - e)
+
+
+def _ipw_terms_hajek(W, Y, e, site_masks, tau_k):
+    """Linearized per-unit terms of the site-wise Hajek estimator.
+
+    For unit i in site k: tau_k + (n_k/N1_k) W (Y - m1_k)/e - (n_k/N0_k) (1-W)(Y - m0_k)/(1-e),
+    with N1_k = Σ_k W/e and m1_k the site's weighted treated mean (same for controls).
+    The correction terms sum to zero within each site, so mean(psi) equals tau.
+    """
+    psi = np.empty(len(W))
+    for mask, t_k in zip(site_masks, tau_k):
+        m = mask.to_numpy()
+        w1, w0 = W[m] / e[m], (1 - W[m]) / (1 - e[m])
+        n_site = m.sum()
+        m1 = np.sum(w1 * Y[m]) / np.sum(w1)
+        m0 = np.sum(w0 * Y[m]) / np.sum(w0)
+        psi[m] = (
+            t_k
+            + n_site / np.sum(w1) * w1 * (Y[m] - m1)
+            - n_site / np.sum(w0) * w0 * (Y[m] - m0)
+        )
+    return psi
 
 
 def _if_se(psi):

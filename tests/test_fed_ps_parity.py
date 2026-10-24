@@ -8,6 +8,7 @@ to return the fixture's dataset, and run one repetition.
 from unittest import mock
 
 import numpy as np
+import pytest
 
 from src.estimators._authors import dgp_fed
 from src.estimators.fed_ps import estimate
@@ -31,11 +32,12 @@ def run_authors_ipw(params, df_auth, ipw_type, omega_params=None):
     return results["MW_logistic"][0], df_out
 
 
-def test_ipw_ht_mw_logistic_matches_authors(dgp_a_poor):
+@pytest.mark.parametrize("ipw_type", ["HT", "Hajek"])
+def test_ipw_mw_logistic_matches_authors(dgp_a_poor, ipw_type):
     params, df_auth, df = dgp_a_poor
-    tau_theirs, df_theirs = run_authors_ipw(params, df_auth, "HT")
+    tau_theirs, df_theirs = run_authors_ipw(params, df_auth, ipw_type)
 
-    ours = estimate(df, mw="logistic", local_ps="logistic", ipw_type="HT")
+    ours = estimate(df, mw="logistic", local_ps="logistic", ipw_type=ipw_type)
 
     their_local = df_theirs[[f"hat_e_local_{k}" for k in (1, 2, 3)]].to_numpy()
     np.testing.assert_allclose(ours["e_local"].to_numpy(), their_local, rtol=1e-12)
