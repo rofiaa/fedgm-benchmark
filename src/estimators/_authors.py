@@ -41,5 +41,11 @@ def dgp_fed():
             os.environ["R_HOME"] = str(env_r_home)
         if str(SCRIPTS_DIR) not in sys.path:
             sys.path.insert(0, str(SCRIPTS_DIR))
-        _module = importlib.import_module("DGP_Fed")
+        # Keep the submodule clean: no __pycache__ written into it.
+        dont_write = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
+        try:
+            _module = importlib.import_module("DGP_Fed")
+        finally:
+            sys.dont_write_bytecode = dont_write
     return _module
