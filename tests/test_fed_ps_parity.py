@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from src.estimators._authors import dgp_fed
-from src.estimators.fed_ps import estimate
+from src.estimators.fed_ps import FEDAVG_MW_DEFAULTS, estimate
 
 
 def run_authors_ipw(params, df_auth, ipw_type, omega_params=None):
@@ -33,11 +33,14 @@ def run_authors_ipw(params, df_auth, ipw_type, omega_params=None):
 
 
 @pytest.mark.parametrize("ipw_type", ["HT", "Hajek"])
-def test_ipw_mw_logistic_matches_authors(dgp_a_poor, ipw_type):
+@pytest.mark.parametrize("mw", ["logistic", "logistic_fedavg"])
+def test_ipw_mw_logistic_matches_authors(dgp_a_poor, ipw_type, mw):
     params, df_auth, df = dgp_a_poor
-    tau_theirs, df_theirs = run_authors_ipw(params, df_auth, ipw_type)
+    # their FedAvg runs only when params_for_federation_omega is passed
+    omega_params = FEDAVG_MW_DEFAULTS if mw == "logistic_fedavg" else None
+    tau_theirs, df_theirs = run_authors_ipw(params, df_auth, ipw_type, omega_params)
 
-    ours = estimate(df, mw="logistic", local_ps="logistic", ipw_type=ipw_type)
+    ours = estimate(df, mw=mw, local_ps="logistic", ipw_type=ipw_type)
 
     their_local = df_theirs[[f"hat_e_local_{k}" for k in (1, 2, 3)]].to_numpy()
     np.testing.assert_allclose(ours["e_local"].to_numpy(), their_local, rtol=1e-12)

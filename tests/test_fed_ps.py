@@ -44,3 +44,17 @@ def test_unimplemented_options_raise(dgp_a_poor):
     _, _, df = dgp_a_poor
     with pytest.raises(NotImplementedError):
         estimate(df, aipw=True)
+    with pytest.raises(NotImplementedError, match="minibatches"):
+        estimate(df, mw="logistic_fedavg", fedavg_params={"B_batch_size": 32})
+
+
+def test_fedavg_mw_close_to_pooled(dgp_a_poor):
+    """Same target; 30 FedAvg rounds on unscaled X need not have converged."""
+    _, _, df = dgp_a_poor
+    pooled = estimate(df, mw="logistic")
+    fedavg = estimate(df, mw="logistic_fedavg")
+    assert fedavg["mw_fit"] == "fedavg" and pooled["mw_fit"] == "pooled-centralized"
+    gap = np.abs(fedavg["omega_hat"] - pooled["omega_hat"]).to_numpy()
+    print(f"max |omega_fedavg - omega_pooled| = {gap.max():.3f}, "
+          f"tau {fedavg['tau']:.3f} vs {pooled['tau']:.3f}")
+    assert np.isfinite(fedavg["tau"])

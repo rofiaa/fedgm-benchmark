@@ -20,11 +20,16 @@ from src.estimators._authors import dgp_fed
 from src.estimators.balance import smd
 
 _IMPLEMENTED = {
-    "mw": {"logistic"},
+    "mw": {"logistic", "logistic_fedavg"},
     "local_ps": {"logistic"},
     "ipw_type": {"HT", "Hajek"},
     "aipw": {False},
 }
+
+# Notebook values for the membership-weight FedAvg (federation_parameters_omega).
+FEDAVG_MW_DEFAULTS = {"T_rounds": 30, "eta": 0.1, "E_local_steps": 3, "B_batch_size": None}
+
+_MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg"}
 
 
 def estimate(
@@ -35,17 +40,21 @@ def estimate(
     aipw=False,
     seed=None,
     mw_intercept=True,
+    fedavg_params=None,
 ):
     """Federated IPW estimate of the ATE.
 
     df: columns X1..Xd, H (sites 0..K-1), W (0/1), Y.
     mw: membership-weight model for P(H|X). "logistic" = authors' MW_estimation_pooled
-        (a centralized multinomial fit, the default in their code).
+        (a centralized multinomial fit, the default in their code); "logistic_fedavg" =
+        authors' MW_estimation (FedAvg multinomial logistic, full-batch local steps).
     local_ps: local propensity model e_k(x). "logistic" = authors' compute_gamma.
     ipw_type: "HT" (Horvitz-Thompson) or "Hajek". As in the authors' code, Hajek
         normalizes the weights within each site, then sites are averaged with n_k/n.
     mw_intercept: include an intercept in the membership model (the authors' IPW path
         does; their AIPW path does not).
+    fedavg_params: overrides of FEDAVG_MW_DEFAULTS for mw="logistic_fedavg". Only
+        B_batch_size=None is supported: minibatches are drawn from numpy's global RNG.
     seed: reserved for the stochastic variants; unused by the deterministic ones.
 
     Returns dict(tau, se, se_method, e_hat, e_local, omega_hat, n_k, smd, max_smd,
@@ -55,6 +64,9 @@ def estimate(
                         ("ipw_type", ipw_type), ("aipw", aipw)]:
         if value not in _IMPLEMENTED[name]:
             raise NotImplementedError(f"{name}={value!r} is not implemented yet")
+    fedavg = {**FEDAVG_MW_DEFAULTS, **(fedavg_params or {})}
+    if fedavg["B_batch_size"] is not None:
+        raise NotImplementedError("FedAvg with minibatches (B_batch_size) is not supported")
 
     start = time.perf_counter()
     A = dgp_fed()
@@ -63,9 +75,11 @@ def estimate(
     mw_cols = x_cols + ["intercept"] if mw_intercept else x_cols
 
     e_local = _local_propensities(A, data, ps_cols, K)
-    omega = _site_order_numeric(
-        A.MW_estimation_pooled(data, mw_cols, scale=False).to_numpy(), K
-    )
+    if mw == "logistic":
+        omega = A.MW_estimation_pooled(data, mw_cols, scale=False)
+    else:
+        omega = A.MW_estimation(data, mw_cols, **fedavg, scale=False)
+    omega = _site_order_numeric(omega.to_numpy(), K)
     e_hat = A.membership_weighting_vectorized(pd.DataFrame(omega), pd.DataFrame(e_local))
     data["e_hat"] = e_hat
 
@@ -98,7 +112,7 @@ def estimate(
         n_k=dict(enumerate(n_k.tolist())),
         smd=balance,
         max_smd=float(balance.abs().max()),
-        mw_fit="pooled-centralized",
+        mw_fit=_MW_FIT[mw],
         outcome_fit=None,
         runtime=time.perf_counter() - start,
     )
