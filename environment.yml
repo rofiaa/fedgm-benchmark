@@ -18,7 +18,7 @@ dependencies:
   - r-grf        # probability forests used by the authors' code (use_grf=True)
   - r-matching   # GenMatch / Match
   - r-rgenoud    # genetic optimizer required by GenMatch
+  - pytorch      # NN membership weights; conda build, the pip wheel's bundled libomp clashes with conda's
   - pip
   - pip:
-      - torch    # NN membership weights in the authors' code
       - densratio
