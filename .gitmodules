@@ -1,0 +1,3 @@
+[submodule "third_party/FedCausal-ObservationalStudies"]
+	path = third_party/FedCausal-ObservationalStudies
+	url = https://github.com/RemiKhellaf/FedCausal-ObservationalStudies
