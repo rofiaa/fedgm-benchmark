@@ -1,0 +1,24 @@
+name: fedgm
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn<1.8   # authors' MW_estimation_pooled passes multi_class=, removed in 1.8
+  - statsmodels
+  - matplotlib
+  - seaborn
+  - tqdm
+  - jupyterlab
+  - pytest
+  - rpy2
+  - r-base
+  - r-grf        # probability forests used by the authors' code (use_grf=True)
+  - r-matching   # GenMatch / Match
+  - r-rgenoud    # genetic optimizer required by GenMatch
+  - pip
+  - pip:
+      - torch    # NN membership weights in the authors' code
+      - densratio
