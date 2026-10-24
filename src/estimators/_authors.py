@@ -5,9 +5,10 @@ deferred until an estimator actually needs it.
 """
 
 import importlib
-import os
 import sys
 from pathlib import Path
+
+from src.r_env import ensure_r_home
 
 SCRIPTS_DIR = (
     Path(__file__).resolve().parents[2]
@@ -34,11 +35,7 @@ def dgp_fed():
                     f"A different 'utils' module is already imported ({loaded_dir}); "
                     "the authors' DGP_Fed needs its own scripts/utils.py."
                 )
-        # DGP_Fed imports rpy2.robjects at module level. Without R_HOME, rpy2 can pick
-        # up a system R (e.g. /Library/Frameworks) instead of the env's and segfault.
-        env_r_home = Path(sys.prefix) / "lib" / "R"
-        if "R_HOME" not in os.environ and env_r_home.is_dir():
-            os.environ["R_HOME"] = str(env_r_home)
+        ensure_r_home()  # DGP_Fed imports rpy2.robjects at module level
         if str(SCRIPTS_DIR) not in sys.path:
             sys.path.insert(0, str(SCRIPTS_DIR))
         # Keep the submodule clean: no __pycache__ written into it.

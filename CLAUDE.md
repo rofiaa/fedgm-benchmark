@@ -16,6 +16,23 @@ The RCT paper (Khellaf et al., AISTATS 2025, arXiv:2410.16870) is OUT OF SCOPE f
 - Data frame columns: covariates `X1..Xd`, site `H` (0..K-1), treatment `W`, outcome `Y`.
 - All randomness goes through an explicit `seed` argument. No global seeding inside library code.
 
+## Environment setup
+```
+mamba env create -f environment.yml
+conda activate fedgm
+Rscript setup/install_r_packages.R   # rgenoud + Matching from cloud.r-project.org
+pytest -q tests/                     # includes a GenMatch-through-rpy2 smoke test
+```
+- `Matching` and `rgenoud` are not on conda-forge for osx-arm64, so they come from CRAN
+  (compiled with the env's `compilers` + `make`) into the env's R library.
+- torch comes from conda-forge (`pytorch`): the pip wheel bundles its own libomp and
+  aborts on import next to conda's.
+- `src/r_env.ensure_r_home()` defaults `R_HOME` to the env's R; otherwise rpy2 may load a
+  system R (`/Library/Frameworks`) and segfault. Call it before importing `rpy2.robjects`.
+- Arguments forwarded through `...` (e.g. GenMatch → genoud `unif.seed`, `int.seed`) must
+  be passed with their dotted names (`**{"unif.seed": 1}`); rpy2 only maps `_`→`.` for
+  formal arguments.
+
 ## Repo layout
 - `third_party/FedCausal-ObservationalStudies/` — authors' code (git submodule). **Never edit.** Wrap it.
 - `papers/` — PDFs of the relevant papers. Read them when unsure about a definition.

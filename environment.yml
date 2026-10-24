@@ -16,8 +16,10 @@ dependencies:
   - rpy2
   - r-base
   - r-grf        # probability forests used by the authors' code (use_grf=True)
-  - r-matching   # GenMatch / Match
-  - r-rgenoud    # genetic optimizer required by GenMatch
+  # Matching (GenMatch/Match) and rgenoud have no osx-arm64 conda builds; they are
+  # installed from CRAN by setup/install_r_packages.R, which needs these to compile.
+  - compilers
+  - make
   - pytorch      # NN membership weights; conda build, the pip wheel's bundled libomp clashes with conda's
   - pip
   - pip:
