@@ -104,6 +104,13 @@ cannot take an external data frame. Therefore:
   or `"fedavg"` (authors' clipped FedAvg-SGD, `FEDAVG_OUTCOME_NOTEBOOK`). The authors'
   AIPW fits MW **without** an intercept; our default `mw_intercept=True`, parity tests
   pass `mw_intercept=False`.
+- Meta-SW in `src/estimators/meta_sw.py` (`estimate(df, local_ps, ipw_type, aipw, seed,
+  bootstrap)`): per-site estimates with the site's own ê_k (and per-site OLS outcome
+  models for AIPW), averaged with n_k/n; parity with the authors' "Meta-SW". A site with
+  one treatment arm → τ̂ = NaN with `undefined_reason` (never dropped); in the bootstrap
+  such replicates count as failed (and in `boot_arm_loss`).
+- Frozen result keys (`src/estimators/common.py`, `check_result`): `tau`, `se`,
+  `se_method`, `max_smd`, `runtime`; everything else is an extra.
 - `generate_multivariate_mixtures_of_normals` (DGP B) uses `np.NaN`, removed in NumPy 2;
   `src/estimators/_authors.py` restores the alias before importing.
 

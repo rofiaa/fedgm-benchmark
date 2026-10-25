@@ -226,7 +226,7 @@ def _fit(A, data, x_cols, K, mw, ipw_type, aipw, mw_intercept, fedavg, outcome,
                 outcome_coef=outcome_coef)
 
 
-def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
+def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed, fit=None):
     """Nonparametric bootstrap that resamples rows within each site (n_k fixed) and
     refits every nuisance (local PS, MW, outcome models) in each replicate.
 
@@ -237,12 +237,17 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
     and RF seeds come from two further children of that sequence.
     A replicate in which some site that had both arms keeps only one is counted in
     boot_arm_loss; it is still estimated (that site's ê_k becomes the constant 0 or 1).
+    `fit(A, data, x_cols, K, **cfg)` -> dict with "tau" (default: this module's _fit);
+    meta_sw passes its own. cfg keys "mw" / "local_ps" switch on the NN / RF seeding.
     """
+    fit = fit or _fit
     seq = np.random.SeedSequence(seed)
     site_rows = [np.flatnonzero(data["client"].to_numpy() == _label(k)) for k in range(K)]
     W = data["W"].to_numpy()
     had_both = [len(np.unique(W[rows])) == 2 for rows in site_rows]
-    boot_cfg = {**cfg, "mw": "logistic" if cfg["mw"] == "logistic_fedavg" else cfg["mw"]}
+    boot_cfg = dict(cfg)
+    if boot_cfg.get("mw") == "logistic_fedavg":
+        boot_cfg["mw"] = "logistic"
 
     taus = np.full(B, np.nan)
     arm_loss_by_site = np.zeros(K, dtype=int)
@@ -250,9 +255,9 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
     for b, child in enumerate(seq.spawn(B)):
         rng = np.random.default_rng(child)
         nn_seq, rf_seq = child.spawn(2)
-        if boot_cfg["mw"] == "nn":
+        if boot_cfg.get("mw") == "nn":
             boot_cfg["mw_seed"] = _int_seed(nn_seq, 63)
-        if boot_cfg["local_ps"] == "rf":
+        if boot_cfg.get("local_ps") == "rf":
             boot_cfg["ps_seed"] = _int_seed(rf_seq, 32)
         draws = [rng.choice(rows, size=len(rows)) for rows in site_rows]
         lost = [both and len(np.unique(W[d])) < 2 for both, d in zip(had_both, draws)]
@@ -262,8 +267,8 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                taus[b] = _fit(A, data.iloc[idx].reset_index(drop=True), x_cols, K,
-                               **boot_cfg)["tau"]
+                taus[b] = fit(A, data.iloc[idx].reset_index(drop=True), x_cols, K,
+                              **boot_cfg)["tau"]
         except Exception:  # e.g. a singular refit; counted, not fatal
             failed += 1
     ok = taus[np.isfinite(taus)]
@@ -277,7 +282,7 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
         boot_failed=failed,
         boot_arm_loss=int(arm_loss),
         boot_arm_loss_by_site=dict(enumerate(arm_loss_by_site.tolist())),
-        boot_mw_fit=_MW_FIT[boot_cfg["mw"]],
+        boot_mw_fit=_MW_FIT.get(boot_cfg.get("mw")),
         boot_seed_entropy=seq.entropy,
         boot_taus=taus,
     )
