@@ -48,3 +48,11 @@ def test_aipw_bootstrap_runs(dgp_a_poor):
     _, _, df = dgp_a_poor
     out = estimate(df, aipw=True, bootstrap=20, seed=3)
     assert out["boot_ok"] == 20 and np.isfinite(out["se_boot"]) and out["se_boot"] > 0
+
+
+def test_nn_bootstrap_retrains_with_seeded_nets(dgp_a_poor):
+    _, _, df = dgp_a_poor
+    a = estimate(df, mw="nn", bootstrap=3, seed=9)
+    b = estimate(df, mw="nn", bootstrap=3, seed=9)
+    assert a["boot_mw_fit"] == "nn-pooled" and a["boot_ok"] == 3
+    np.testing.assert_array_equal(a["boot_taus"], b["boot_taus"])

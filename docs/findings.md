@@ -12,6 +12,7 @@ Line numbers refer to `FedCaus_Obs/scripts/DGP_Fed.py` unless stated.
 | F3 | DGP A/B parameters: notebook ≠ paper; Fig. 2 true ATE not reproduced | Fig. 2 true-ATE line; **unresolved** | Paper values default, notebook as variants |
 | F4 | Known FedAvg client drift (E > 1, fixed step, label-skewed sites) | Notebook Fig. 2a AIPW uses E = 3, T = 30 | Default E = 1, standardized X, stopping rule |
 | F5 | "Fed-AIPW unbiased at all overlap levels" (text) vs Fig. 2b | Text vs figure | Reproduction target narrowed |
+| F6 | `train_NN` early stopping keeps the last epoch, not the best | Minor; MW-NN results | Kept for parity; documented |
 
 ---
 
@@ -199,6 +200,32 @@ Same with the authors' FedAvg-SGD outcome fit (+0.75 / +0.02).
 **Our handling.** CLAUDE.md's reproduction target now reads "Fed-AIPW unbiased when
 either nuisance model is well specified (MW-NN, or DGP B)". AIPW parity:
 `tests/test_fed_ps_parity.py::test_aipw_mw_logistic_matches_authors[ols, fedavg]`.
+
+---
+
+## F6. `train_NN`'s early stopping restores the last epoch, not the best
+
+**What.** `train_NN` (l. 1277–1357) keeps `best_model_state = model.state_dict()`
+(l. 1338) when the epoch loss improves and calls `model.load_state_dict(best_model_state)`
+after training (l. 1346). `state_dict()` returns references to the live parameter
+tensors, not a copy, so the "best" snapshot keeps changing with the model and the
+restore is a no-op: the returned net is the one from the last epoch, i.e. 5 epochs
+(the patience) after the best training loss, or epoch 100. A copy
+(`copy.deepcopy(model.state_dict())`) would be needed.
+
+**Evidence.** Minimal reproduction: `m = nn.Linear(2, 1); best = m.state_dict();
+m.weight += 1` → `best["weight"]` has changed too.
+
+**Impact.** Small: the training loss is being minimized with no regularization, and
+5 extra Adam epochs rarely move far from the best epoch; the stopping rule itself still
+works. MW-NN behaves as the paper reports in our check (20 reps, `mw="nn"`, IF only):
+AIPW bias −0.03 ± 0.04 in DGP A (logistic MW: +0.77) and −0.03 ± 0.02 in DGP B.
+
+**Our handling.** `fed_ps` calls the authors' `train_NN` unchanged (parity:
+`tests/test_fed_ps_parity.py::test_ipw_mw_nn_matches_authors`,
+`::test_aipw_mw_nn_matches_authors`). Also: `train_NN` trains on the **pooled** data
+(not FedAvg as in the paper's App. C), and with `rerun_NN=False` it returns the cached
+model object instead of probabilities; `fed_ps` always passes `rerun_NN=True`.
 
 ---
 

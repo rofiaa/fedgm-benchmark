@@ -93,3 +93,57 @@ def test_aipw_mw_logistic_matches_authors(dgp_a_poor, outcome):
     np.testing.assert_allclose(ours["tau"], tau_theirs, rtol=1e-10)
     assert ours["outcome_fit"] == {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}[outcome]
     assert np.isfinite(ours["se"]) and ours["se"] > 0
+
+
+def test_ipw_mw_nn_matches_authors(dgp_a_poor):
+    """train_NN draws from torch's global RNG; seeding it with the same int before
+    their run as our `seed` must give the same net, hence the same estimate."""
+    import torch
+
+    params, df_auth, df = dgp_a_poor
+    Sim = dgp_fed().Simulations_Fed
+    torch.manual_seed(11)
+    with mock.patch.object(Sim, "combine_data", lambda self, dict_data=None: df_auth.copy()):
+        results, df_theirs, _ = Sim(params, n_simulations=1).estimate_ipw(
+            ht_or_hajek="HT",
+            propensity_estimation="logistic",
+            propensity_federations=["MW_NN", "local"],
+            final_estimators=["MW_NN"],
+            generate_by_center=True,
+            print_overlap=False,
+            rerun_NN=True,
+            scale=False,
+        )
+
+    ours = estimate(df, mw="nn", seed=11)
+
+    assert ours["mw_fit"] == "nn-pooled" and ours["mw_seed"] == 11
+    np.testing.assert_allclose(
+        ours["e_hat"].to_numpy(), df_theirs["hat_e_MW_NN"].to_numpy(), rtol=1e-6
+    )
+    np.testing.assert_allclose(ours["tau"], results["MW_NN"][0], rtol=1e-6)
+
+
+def test_aipw_mw_nn_matches_authors(dgp_a_poor):
+    import torch
+
+    params, df_auth, df = dgp_a_poor
+    Sim = dgp_fed().Simulations_Fed
+    torch.manual_seed(12)
+    with mock.patch.object(Sim, "combine_data", lambda self, dict_data=None: df_auth.copy()):
+        results, _ = Sim(params, n_simulations=1).estimate_aipw(
+            propensity_federations=["MW_NN", "local"],
+            outcome_estimators=["GD"],
+            final_estimators=["GD-MW_NN"],
+            propensity_estimation="logistic",
+            generate_by_center=True,
+            params_for_federation=None,
+            params_for_federation_omega=None,
+            scale=False,
+            print_overlap=False,
+            rerun_NN=True,
+        )
+
+    ours = estimate(df, mw="nn", aipw=True, seed=12)
+
+    np.testing.assert_allclose(ours["tau"], results["GD-MW_NN"][0], rtol=1e-6)

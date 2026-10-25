@@ -75,7 +75,7 @@ cannot take an external data frame. Therefore:
   not FedAvg in this code.
 - `MW_estimation(..., scale=True)` fits Theta on unscaled X but predicts on scaled X → mismatch.
   Keep `scale=False` (default) or standardize X before calling.
-- **Full log with evidence, commits and tests: `docs/findings.md`** (F1–F5). Summary:
+- **Full log with evidence, commits and tests: `docs/findings.md`** (F1–F6). Summary:
   - F1: membership columns come out in alphabetical site order → wrong for K ≥ 10.
     `fed_ps` reorders them.
   - F2: `ipw_function(..., "Hajek")` per site with the global ê is inconsistent.
@@ -90,6 +90,11 @@ cannot take an external data frame. Therefore:
     `FEDAVG_MW_NOTEBOOK` (T=30, E=3, eta=0.1, unscaled) is for parity only.
   - F5: with logistic MW, Fed-AIPW is biased in DGP A (both nuisances misspecified), as
     Fig. 2b shows, despite the text's "unbiased at all overlap levels".
+  - F6: `train_NN`'s early stopping restores the last epoch (state_dict aliasing).
+- MW-NN in `fed_ps.estimate(mw="nn", seed=...)`: authors' `train_NN` unchanged (pooled
+  data, `rerun_NN=True`), seeded via `torch.manual_seed` inside `torch.random.fork_rng`
+  (int seeds pass through, for parity). ≈ 2–4 s per fit; the bootstrap retrains it in
+  every replicate.
 - AIPW in `fed_ps.estimate(aipw=True)`: linear outcome models on X + intercept, shared
   by all sites; `outcome="ols"` (default; the authors' "GD" without federation params)
   or `"fedavg"` (authors' clipped FedAvg-SGD, `FEDAVG_OUTCOME_NOTEBOOK`). The authors'

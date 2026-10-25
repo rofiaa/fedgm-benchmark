@@ -114,3 +114,20 @@ def test_hajek_pooled_normalizes_over_all_sites(dgp_a_poor):
     psi = _ipw_terms_hajek(W.to_numpy(), Y.to_numpy(), e.to_numpy(), [all_rows], [out["tau"]])
     assert np.isclose(psi.mean(), out["tau"], rtol=1e-12)
     assert np.isclose(np.std(psi, ddof=1) / np.sqrt(len(psi)), out["se"], rtol=1e-12)
+
+
+def test_nn_mw_is_seeded_and_restores_torch_rng(dgp_a_poor):
+    import torch
+
+    _, _, df = dgp_a_poor
+    torch.manual_seed(123)
+    expected_next = torch.rand(1)
+    torch.manual_seed(123)
+
+    a = estimate(df, mw="nn", seed=5)
+
+    assert torch.equal(torch.rand(1), expected_next)  # global torch RNG untouched
+    b = estimate(df, mw="nn", seed=5)
+    c = estimate(df, mw="nn", seed=6)
+    assert a["tau"] == b["tau"] and a["tau"] != c["tau"]
+    assert np.allclose(a["omega_hat"].sum(axis=1), 1)

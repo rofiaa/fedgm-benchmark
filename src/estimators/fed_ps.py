@@ -21,7 +21,7 @@ from src.estimators._authors import dgp_fed
 from src.estimators.balance import smd
 
 _IMPLEMENTED = {
-    "mw": {"logistic", "logistic_fedavg"},
+    "mw": {"logistic", "logistic_fedavg", "nn"},
     "local_ps": {"logistic"},
     "ipw_type": {"HT", "Hajek", "Hajek_pooled"},
     "aipw": {False, True},
@@ -48,7 +48,8 @@ FEDAVG_MW_NOTEBOOK = {"T_rounds": 30, "eta": 0.1, "E_local_steps": 3,
 BOOTSTRAP_B = 200
 _Z95 = 1.959963984540054
 
-_MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg"}
+_MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg",
+           "nn": "nn-pooled"}
 _OUTCOME_FIT = {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}
 
 
@@ -71,7 +72,9 @@ def estimate(
     mw: membership-weight model for P(H|X). "logistic" = authors' MW_estimation_pooled
         (a centralized multinomial fit, the default in their code); "logistic_fedavg" =
         FedAvg multinomial logistic with full-batch local steps (authors' algorithm and
-        gradient, plus a stopping rule; see FEDAVG_MW_DEFAULTS).
+        gradient, plus a stopping rule; see FEDAVG_MW_DEFAULTS); "nn" = authors'
+        train_NN (one hidden layer of 64 units, Adam, early stopping on the training
+        loss, X standardized), trained on the **pooled** data, not by FedAvg.
     local_ps: local propensity model e_k(x). "logistic" = authors' compute_gamma.
     ipw_type: "HT" (Horvitz-Thompson; primary), "Hajek_pooled" (weights normalized over
         all sites), or "Hajek" -- the authors' version, which normalizes within each
@@ -90,7 +93,10 @@ def estimate(
     bootstrap: number of site-stratified bootstrap replicates B (0 = off; the benchmark
         uses BOOTSTRAP_B = 200). See _site_stratified_bootstrap.
     seed: seeds the bootstrap through np.random.SeedSequence(seed) and its spawned
-        children; None draws fresh entropy (returned as boot_seed_entropy).
+        children; None draws fresh entropy (returned as boot_seed_entropy). For mw="nn"
+        it also seeds torch (inside torch.random.fork_rng, so the global torch RNG is
+        restored): an int seed is passed to torch.manual_seed as is, anything else is
+        mapped through SeedSequence; the value used is returned as mw_seed.
 
     Returns dict(tau, se, se_method, ci_if, e_hat, e_local, omega_hat, n_k, smd,
     max_smd, mw_fit, mw_rounds, mw_converged, outcome_fit, outcome_coef, runtime).
@@ -111,7 +117,8 @@ def estimate(
     if fedavg["B_batch_size"] is not None:
         raise NotImplementedError("FedAvg with minibatches (B_batch_size) is not supported")
     cfg = dict(mw=mw, ipw_type=ipw_type, aipw=aipw, mw_intercept=mw_intercept,
-               fedavg=fedavg, outcome=outcome, outcome_fedavg_params=outcome_fedavg_params)
+               fedavg=fedavg, outcome=outcome, outcome_fedavg_params=outcome_fedavg_params,
+               mw_seed=_torch_seed(seed) if mw == "nn" else None)
 
     start = time.perf_counter()
     A = dgp_fed()
@@ -137,6 +144,7 @@ def estimate(
         mw_fit=_MW_FIT[mw],
         mw_rounds=fit["mw_rounds"],
         mw_converged=fit["mw_converged"],
+        mw_seed=cfg["mw_seed"],
         outcome_fit=_OUTCOME_FIT[outcome] if aipw else None,
         outcome_coef=fit["outcome_coef"],
     )
@@ -147,7 +155,7 @@ def estimate(
 
 
 def _fit(A, data, x_cols, K, mw, ipw_type, aipw, mw_intercept, fedavg, outcome,
-         outcome_fedavg_params):
+         outcome_fedavg_params, mw_seed):
     """Fit all nuisances on `data` (authors' layout) and compute τ̂ and its IF SE."""
     data = data.copy()
     ps_cols = x_cols + ["intercept"]
@@ -159,6 +167,8 @@ def _fit(A, data, x_cols, K, mw, ipw_type, aipw, mw_intercept, fedavg, outcome,
         omega = _site_order_numeric(
             A.MW_estimation_pooled(data, mw_cols, scale=False).to_numpy(), K
         )
+    elif mw == "nn":
+        omega = _nn_membership(A, data, x_cols, K, mw_seed)
     else:
         omega, mw_rounds, mw_converged = _fedavg_membership(
             A, data, mw_cols, K, fedavg["T_rounds"], fedavg["eta"],
@@ -211,7 +221,9 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
 
     MW is refit with the pooled multinomial logistic fit even when mw="logistic_fedavg":
     converged FedAvg reaches the same fit (tests/test_fed_ps.py), at a fraction of the
-    cost. Replicate b draws from np.random.default_rng(SeedSequence(seed).spawn(B)[b]).
+    cost. mw="nn" retrains the net in every replicate (≈ 2-4 s each).
+    Replicate b draws from np.random.default_rng(SeedSequence(seed).spawn(B)[b]); its NN
+    seed comes from a further child of that sequence.
     A replicate in which some site that had both arms keeps only one is counted in
     boot_arm_loss; it is still estimated (that site's ê_k becomes the constant 0 or 1).
     """
@@ -226,6 +238,8 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
     arm_loss = failed = 0
     for b, child in enumerate(seq.spawn(B)):
         rng = np.random.default_rng(child)
+        if boot_cfg["mw"] == "nn":
+            boot_cfg["mw_seed"] = _torch_seed(child.spawn(1)[0])
         draws = [rng.choice(rows, size=len(rows)) for rows in site_rows]
         lost = [both and len(np.unique(W[d])) < 2 for both, d in zip(had_both, draws)]
         idx = np.concatenate(draws)
@@ -380,6 +394,32 @@ def _outcome_models(A, data, out_cols, K, outcome, outcome_fedavg_params):
 
 def _aipw_terms(W, Y, e, mu1, mu0):
     return mu1 - mu0 + W * (Y - mu1) / e - (1 - W) * (Y - mu0) / (1 - e)
+
+
+def _torch_seed(seed):
+    """An int for torch.manual_seed: ints pass through (parity with the authors'
+    torch.manual_seed(s)); None, sequences and SeedSequences go through SeedSequence."""
+    if isinstance(seed, (int, np.integer)) and 0 <= seed < 2**63:
+        return int(seed)
+    if not isinstance(seed, np.random.SeedSequence):
+        seed = np.random.SeedSequence(seed)
+    return int(seed.generate_state(1, np.uint64)[0] >> 1)
+
+
+def _nn_membership(A, data, x_cols, K, torch_seed):
+    """Authors' Simulations_Fed.train_NN, called unbound with a minimal stand-in for
+    `self` (it only reads sorting_columns and caches nn_model). rerun_NN=True: with the
+    default False it would return the cached model object instead of probabilities.
+    Columns come out in LabelEncoder (alphabetical) site order and are reordered."""
+    import types
+
+    import torch
+
+    stub = types.SimpleNamespace(sorting_columns=x_cols)
+    with torch.random.fork_rng():
+        torch.manual_seed(torch_seed)
+        proba = A.Simulations_Fed.train_NN(stub, data, rerun_NN=True)
+    return _site_order_numeric(np.asarray(proba), K)
 
 
 def _ipw_terms_ht(W, Y, e):
