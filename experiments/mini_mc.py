@@ -1,4 +1,7 @@
-"""Mini Monte Carlo: Fed-IPW / Fed-AIPW with logistic membership weights, poor local
+"""SUPERSEDED by experiments/run.py + experiments/configs/ps_mc.py; kept to
+reproduce results/mini_mc_*.csv.
+
+Mini Monte Carlo: Fed-IPW / Fed-AIPW with logistic membership weights, poor local
 overlap; influence-function vs site-stratified bootstrap inference.
 
 For each scenario, draws `--reps` datasets with the authors' generator and runs

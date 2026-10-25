@@ -146,6 +146,22 @@ notebook's code (they differ from App. D Table 2; F3).
 - Fed-IPW-DW unbiased under DGP A, biased under DGP B.
 - Good overlap: all unbiased; federated estimators have the smallest variance.
 
+## Experiment harness (`experiments/`)
+- `harness.py`: a config file defines `SCENARIOS` (`Scenario(name, generate(seed) -> df,
+  truth(n, seed))`), `CONFIGS` and `BASE_SEED`. A `Config` runs on one df and returns
+  {estimator label: result}; `single(...)` wraps `estimate`, `multi(...)` wraps
+  `estimate_multi` (one shared nuisance fit, one row per estimand, same `config_id`).
+  Bootstrap per config: `bootstrap=B, bootstrap_reps=range(...), bootstrap_for=[...]`.
+  **New estimators (GenMatch) = new configs**; rows rely only on the frozen keys.
+- Seeds: `SeedSequence(BASE_SEED, spawn_key=(scenario, rep[, config]))`, so any rep slice
+  reproduces the rows of a full run (tested).
+- `run.py <config> --reps 0-29 --jobs 7 --out results/<run>` → `<out>/rows/<scenario>_reps
+  <a>-<b>.csv`; SLURM: one array task per rep slice with `--jobs 1`. True ATEs are cached
+  in `<out>/truth/`. `summarize.py <out>` → `<out>/summary.csv`.
+- Long local runs: `caffeinate -i` (a sleeping Mac stalls the pool).
+- `experiments/configs/ps_mc.py`: the six-scenario PS-aggregation MC.
+  `experiments/mini_mc.py` is superseded (kept for its committed results).
+
 ## Metrics for every method
 bias, RMSE, 95% CI coverage, CI width, post-match/weight balance (max |SMD|), runtime.
 

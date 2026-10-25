@@ -138,14 +138,14 @@ def _fit(A, data, x_cols, K, estimands, local_ps, ps_seed):
 
     single_arm = [k for k, m in enumerate(site_masks)
                   if len(np.unique(W[m.to_numpy()])) < 2]
+    if single_arm:  # undefined: skip the (possibly costly) PS fits
+        nan = float("nan")
+        est = {name: dict(tau=nan, se=nan, tau_k=[nan] * K) for name in estimands}
+        return dict(est=est, n_k=n_k, e_own=np.full(len(data), nan),
+                    undefined_reason=f"sites {single_arm} have a single treatment arm")
     e_local = _local_propensities(A, data, ps_cols, K, local_ps, ps_seed)
     # each unit's own site's score
     e_own = e_local[np.arange(len(data)), [int(c[6:]) - 1 for c in data["client"]]]
-    if single_arm:
-        nan = float("nan")
-        est = {name: dict(tau=nan, se=nan, tau_k=[nan] * K) for name in estimands}
-        return dict(est=est, n_k=n_k, e_own=e_own,
-                    undefined_reason=f"sites {single_arm} have a single treatment arm")
 
     data["e_own"] = e_own
     est = {}
