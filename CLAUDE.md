@@ -109,8 +109,15 @@ Defaults follow the **paper** (App. D); the notebook's values are named variants
 tests use them. The paper's μ₃ matches Fig. 2's true-ATE line (≈ 8.7) far better than the
 notebook's; a ≈ 0.27 gap to Fig. 2's line (8.72) remains unresolved (F3). γ vectors and the outcome polynomial follow the
 notebook's code (they differ from App. D Table 2; F3).
-- No standard errors are returned. We compute SEs ourselves: influence-function (sandwich) SE for
-  IPW/AIPW, and/or bootstrap — needed for CI coverage.
+- No standard errors are returned. `fed_ps.estimate` gives both:
+  - `se` / `ci_if`: influence-function SE from the per-unit terms, nuisances treated as
+    fixed (provisional; conservative for IPW with estimated PS).
+  - `bootstrap=B` (benchmark: `BOOTSTRAP_B` = 200): site-stratified bootstrap, rows
+    resampled within each site (n_k fixed), local PS / MW (pooled fit, also for
+    `mw="logistic_fedavg"`) / outcome models refit per replicate → `se_boot`,
+    `ci_boot_percentile`; `boot_arm_loss(_by_site)` counts replicates in which a site lost
+    a treatment arm. Seeded by `seed` via `np.random.SeedSequence(seed).spawn(B)`.
+  - **No comparison table without the bootstrap.**
 - `FedCaus_Obs/notebooks/simulations.ipynb` reproduces Fig. 2 (no / poor / good overlap × DGP A/B)
   and Fig. 3 (comparison with Xiong et al. 1S-IVW).
 - Not in the repo: Table 1 (site effects with Z) and the Traumabase analysis (restricted data).
