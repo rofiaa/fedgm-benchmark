@@ -229,6 +229,29 @@ model object instead of probabilities; `fed_ps` always passes `rerun_NN=True`.
 
 ---
 
+## Checks of flagged results
+
+### N1. NN IPW-HT bias in DGP A: not confirmed at 100 reps
+
+**Flag.** A 20-rep check (`f733b73`) gave Fed-IPW-HT with MW-NN a bias of −0.34 ± 0.12
+in DGP A (paper μ₃, τ = 8.456).
+
+**Recheck.** 100 reps, IF inference
+(`experiments/checks/nn_ipw_dgp_a_recheck.py` → `results/checks/nn_ipw_dgp_a_recheck.csv`):
+
+| Method | Bias ± MC SE | Median bias | SD | Mean IF SE | IF coverage | min ê |
+|---|---|---|---|---|---|---|
+| NN, IPW-HT | −0.095 ± 0.053 | −0.200 | 0.529 | 0.751 | 0.98 | 1.9e−3 |
+| NN, AIPW | −0.036 ± 0.021 | −0.068 | 0.213 | 0.252 | 0.98 | 1.9e−3 |
+| logistic, IPW-HT | +0.930 ± 0.037 | +0.892 | 0.370 | 0.642 | 0.92 | 1.9e−2 |
+
+**Conclusion.** The −0.34 was Monte Carlo noise (≈ 2 MC SE). At 100 reps the mean
+bias is −0.10 ± 0.05, within 2 MC SE of zero. The median (−0.20) sits below the mean:
+NN membership weights push the smallest global ê to ≈ 2e−3 (ten times smaller than
+with logistic MW), which gives IPW-HT a right tail. Recheck in the six-scenario MC.
+
+---
+
 ## Compatibility notes (no effect on results)
 
 - `MW_estimation_pooled` passes `multi_class="multinomial"`, removed in scikit-learn 1.8

@@ -63,7 +63,7 @@ def test_rejects_bad_site_labels(dgp_a_poor):
 def test_unimplemented_options_raise(dgp_a_poor):
     _, _, df = dgp_a_poor
     with pytest.raises(NotImplementedError):
-        estimate(df, local_ps="rf")
+        estimate(df, local_ps="grf")
     with pytest.raises(ValueError, match="IPW only"):
         estimate(df, aipw=True, ipw_type="Hajek_pooled")
     with pytest.raises(NotImplementedError, match="minibatches"):
@@ -131,3 +131,13 @@ def test_nn_mw_is_seeded_and_restores_torch_rng(dgp_a_poor):
     c = estimate(df, mw="nn", seed=6)
     assert a["tau"] == b["tau"] and a["tau"] != c["tau"]
     assert np.allclose(a["omega_hat"].sum(axis=1), 1)
+
+
+def test_rf_local_ps_is_seeded_and_bounded(dgp_a_poor):
+    _, _, df = dgp_a_poor
+    a = estimate(df, local_ps="rf", seed=4)
+    b = estimate(df, local_ps="rf", seed=4)
+    c = estimate(df, local_ps="rf", seed=5)
+    assert a["tau"] == b["tau"] and a["tau"] != c["tau"]
+    e = a["e_local"].to_numpy()
+    assert ((e > 0) & (e < 1)).all()  # depth-2 forests with large leaves never hit 0/1

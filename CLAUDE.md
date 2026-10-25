@@ -95,6 +95,10 @@ cannot take an external data frame. Therefore:
   data, `rerun_NN=True`), seeded via `torch.manual_seed` inside `torch.random.fork_rng`
   (int seeds pass through, for parity). ≈ 2–4 s per fit; the bootstrap retrains it in
   every replicate.
+- RF local PS in `fed_ps.estimate(local_ps="rf", seed=...)`: the authors' inline forest
+  (2000 trees, max_depth=2, min_samples_leaf=√n_k, `use_grf=False`), one
+  `np.random.RandomState(seed)` shared by the site forests in site order (= their
+  unseeded forests after `np.random.seed(seed)`). ≈ 5.5 s per estimate (3 sites).
 - AIPW in `fed_ps.estimate(aipw=True)`: linear outcome models on X + intercept, shared
   by all sites; `outcome="ols"` (default; the authors' "GD" without federation params)
   or `"fedavg"` (authors' clipped FedAvg-SGD, `FEDAVG_OUTCOME_NOTEBOOK`). The authors'

@@ -56,3 +56,11 @@ def test_nn_bootstrap_retrains_with_seeded_nets(dgp_a_poor):
     b = estimate(df, mw="nn", bootstrap=3, seed=9)
     assert a["boot_mw_fit"] == "nn-pooled" and a["boot_ok"] == 3
     np.testing.assert_array_equal(a["boot_taus"], b["boot_taus"])
+
+
+def test_rf_bootstrap_refits_seeded_forests(dgp_a_poor):
+    _, _, df = dgp_a_poor
+    a = estimate(df, local_ps="rf", bootstrap=2, seed=9)
+    b = estimate(df, local_ps="rf", bootstrap=2, seed=9)
+    assert a["boot_ok"] == 2
+    np.testing.assert_array_equal(a["boot_taus"], b["boot_taus"])

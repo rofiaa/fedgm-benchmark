@@ -22,7 +22,7 @@ from src.estimators.balance import smd
 
 _IMPLEMENTED = {
     "mw": {"logistic", "logistic_fedavg", "nn"},
-    "local_ps": {"logistic"},
+    "local_ps": {"logistic", "rf"},
     "ipw_type": {"HT", "Hajek", "Hajek_pooled"},
     "aipw": {False, True},
     "outcome": {"ols", "fedavg"},
@@ -75,7 +75,10 @@ def estimate(
         gradient, plus a stopping rule; see FEDAVG_MW_DEFAULTS); "nn" = authors'
         train_NN (one hidden layer of 64 units, Adam, early stopping on the training
         loss, X standardized), trained on the **pooled** data, not by FedAvg.
-    local_ps: local propensity model e_k(x). "logistic" = authors' compute_gamma.
+    local_ps: local propensity model e_k(x), fitted at site k on X + intercept.
+        "logistic" = authors' compute_gamma; "rf" = the authors' inline sklearn forest
+        (RandomForestClassifier(n_estimators=2000, min_samples_leaf=int(sqrt(n_k)),
+        max_depth=2); their use_grf=False path), seeded through `seed`.
     ipw_type: "HT" (Horvitz-Thompson; primary), "Hajek_pooled" (weights normalized over
         all sites), or "Hajek" -- the authors' version, which normalizes within each
         site using the global ê and is inconsistent (docs/findings.md); parity only.
@@ -96,10 +99,14 @@ def estimate(
         children; None draws fresh entropy (returned as boot_seed_entropy). For mw="nn"
         it also seeds torch (inside torch.random.fork_rng, so the global torch RNG is
         restored): an int seed is passed to torch.manual_seed as is, anything else is
-        mapped through SeedSequence; the value used is returned as mw_seed.
+        mapped through SeedSequence; the value used is returned as mw_seed. For
+        local_ps="rf" it seeds one np.random.RandomState shared by the K site forests
+        (fitted in site order), which reproduces the authors' unseeded forests after a
+        global np.random.seed(seed); returned as ps_seed.
 
     Returns dict(tau, se, se_method, ci_if, e_hat, e_local, omega_hat, n_k, smd,
-    max_smd, mw_fit, mw_rounds, mw_converged, outcome_fit, outcome_coef, runtime).
+    max_smd, mw_fit, mw_rounds, mw_converged, mw_seed, local_ps_fit, ps_seed,
+    outcome_fit, outcome_coef, runtime).
     se / ci_if are the IF-based SE and normal 95% CI. mw_rounds/mw_converged are None
     unless mw="logistic_fedavg"; outcome_fit and outcome_coef (dict beta_1, beta_0 over
     X1..Xd, intercept) are None unless aipw=True. With bootstrap > 0, also: se_boot,
@@ -118,7 +125,9 @@ def estimate(
         raise NotImplementedError("FedAvg with minibatches (B_batch_size) is not supported")
     cfg = dict(mw=mw, ipw_type=ipw_type, aipw=aipw, mw_intercept=mw_intercept,
                fedavg=fedavg, outcome=outcome, outcome_fedavg_params=outcome_fedavg_params,
-               mw_seed=_torch_seed(seed) if mw == "nn" else None)
+               mw_seed=_int_seed(seed, 63) if mw == "nn" else None,
+               local_ps=local_ps,
+               ps_seed=_int_seed(seed, 32) if local_ps == "rf" else None)
 
     start = time.perf_counter()
     A = dgp_fed()
@@ -145,6 +154,8 @@ def estimate(
         mw_rounds=fit["mw_rounds"],
         mw_converged=fit["mw_converged"],
         mw_seed=cfg["mw_seed"],
+        local_ps_fit=local_ps,
+        ps_seed=cfg["ps_seed"],
         outcome_fit=_OUTCOME_FIT[outcome] if aipw else None,
         outcome_coef=fit["outcome_coef"],
     )
@@ -155,13 +166,13 @@ def estimate(
 
 
 def _fit(A, data, x_cols, K, mw, ipw_type, aipw, mw_intercept, fedavg, outcome,
-         outcome_fedavg_params, mw_seed):
+         outcome_fedavg_params, mw_seed, local_ps, ps_seed):
     """Fit all nuisances on `data` (authors' layout) and compute τ̂ and its IF SE."""
     data = data.copy()
     ps_cols = x_cols + ["intercept"]
     mw_cols = x_cols + ["intercept"] if mw_intercept else x_cols
 
-    e_local = _local_propensities(A, data, ps_cols, K)
+    e_local = _local_propensities(A, data, ps_cols, K, local_ps, ps_seed)
     mw_rounds = mw_converged = None
     if mw == "logistic":
         omega = _site_order_numeric(
@@ -223,7 +234,7 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
     converged FedAvg reaches the same fit (tests/test_fed_ps.py), at a fraction of the
     cost. mw="nn" retrains the net in every replicate (≈ 2-4 s each).
     Replicate b draws from np.random.default_rng(SeedSequence(seed).spawn(B)[b]); its NN
-    seed comes from a further child of that sequence.
+    and RF seeds come from two further children of that sequence.
     A replicate in which some site that had both arms keeps only one is counted in
     boot_arm_loss; it is still estimated (that site's ê_k becomes the constant 0 or 1).
     """
@@ -238,8 +249,11 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
     arm_loss = failed = 0
     for b, child in enumerate(seq.spawn(B)):
         rng = np.random.default_rng(child)
+        nn_seq, rf_seq = child.spawn(2)
         if boot_cfg["mw"] == "nn":
-            boot_cfg["mw_seed"] = _torch_seed(child.spawn(1)[0])
+            boot_cfg["mw_seed"] = _int_seed(nn_seq, 63)
+        if boot_cfg["local_ps"] == "rf":
+            boot_cfg["ps_seed"] = _int_seed(rf_seq, 32)
         draws = [rng.choice(rows, size=len(rows)) for rows in site_rows]
         lost = [both and len(np.unique(W[d])) < 2 for both, d in zip(had_both, draws)]
         idx = np.concatenate(draws)
@@ -303,18 +317,27 @@ def _to_authors_frame(df):
     return data, x_cols, K
 
 
-def _local_propensities(A, data, ps_cols, K):
+def _local_propensities(A, data, ps_cols, K, local_ps="logistic", ps_seed=None):
     """ê_k fitted on site k, predicted on all rows; (n, K) array.
 
     A site with a single treatment arm gets the constant ê_k = 0 or 1 (it never / always
     treats), as in the authors' external-control-arm setting.
     """
+    from sklearn.ensemble import RandomForestClassifier
+
+    rng = np.random.RandomState(ps_seed) if local_ps == "rf" else None
     e_local = np.empty((len(data), K))
     for k in range(K):
         site = data[data["client"] == _label(k)]
         arms = site["W"].unique()
         if len(arms) == 1:
             e_local[:, k] = float(arms[0])
+        elif local_ps == "rf":
+            forest = RandomForestClassifier(
+                n_estimators=2000, min_samples_leaf=int(np.sqrt(len(site))),
+                max_depth=2, random_state=rng,
+            ).fit(site[ps_cols].to_numpy(), site["W"].to_numpy())
+            e_local[:, k] = forest.predict_proba(data[ps_cols].to_numpy())[:, 1]
         else:
             gamma = A.compute_gamma(site, ps_cols)
             e_local[:, k] = A.logistic_function_vectorized(data, ps_cols, gamma)
@@ -396,14 +419,16 @@ def _aipw_terms(W, Y, e, mu1, mu0):
     return mu1 - mu0 + W * (Y - mu1) / e - (1 - W) * (Y - mu0) / (1 - e)
 
 
-def _torch_seed(seed):
-    """An int for torch.manual_seed: ints pass through (parity with the authors'
-    torch.manual_seed(s)); None, sequences and SeedSequences go through SeedSequence."""
-    if isinstance(seed, (int, np.integer)) and 0 <= seed < 2**63:
+def _int_seed(seed, bits):
+    """A non-negative int below 2**bits (63 for torch.manual_seed, 32 for
+    np.random.RandomState). Ints in range pass through, for parity with the authors'
+    torch.manual_seed(s) / np.random.seed(s); None, sequences and SeedSequences are
+    mapped through SeedSequence."""
+    if isinstance(seed, (int, np.integer)) and 0 <= seed < 2**bits:
         return int(seed)
     if not isinstance(seed, np.random.SeedSequence):
         seed = np.random.SeedSequence(seed)
-    return int(seed.generate_state(1, np.uint64)[0] >> 1)
+    return int(seed.generate_state(1, np.uint64)[0] >> (64 - bits))
 
 
 def _nn_membership(A, data, x_cols, K, torch_seed):

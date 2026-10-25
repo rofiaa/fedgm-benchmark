@@ -147,3 +147,62 @@ def test_aipw_mw_nn_matches_authors(dgp_a_poor):
     ours = estimate(df, mw="nn", aipw=True, seed=12)
 
     np.testing.assert_allclose(ours["tau"], results["GD-MW_NN"][0], rtol=1e-6)
+
+
+def test_ipw_local_rf_matches_authors(dgp_a_poor):
+    """Their forests are unseeded (numpy's global RNG, sites in order); a global
+    np.random.seed(s) before their run must match our seed=s."""
+    params, df_auth, df = dgp_a_poor
+    Sim = dgp_fed().Simulations_Fed
+    state = np.random.get_state()
+    np.random.seed(21)
+    try:
+        with mock.patch.object(Sim, "combine_data",
+                               lambda self, dict_data=None: df_auth.copy()):
+            results, df_theirs, _ = Sim(params, n_simulations=1).estimate_ipw(
+                ht_or_hajek="HT",
+                propensity_estimation="random_forest",
+                use_grf=False,
+                propensity_federations=["MW_logistic", "local"],
+                final_estimators=["MW_logistic"],
+                generate_by_center=True,
+                print_overlap=False,
+                scale=False,
+            )
+    finally:
+        np.random.set_state(state)
+
+    ours = estimate(df, local_ps="rf", seed=21)
+
+    assert ours["local_ps_fit"] == "rf" and ours["ps_seed"] == 21
+    their_local = df_theirs[[f"hat_e_local_{k}" for k in (1, 2, 3)]].to_numpy()
+    np.testing.assert_allclose(ours["e_local"].to_numpy(), their_local, rtol=1e-12)
+    np.testing.assert_allclose(ours["tau"], results["MW_logistic"][0], rtol=1e-10)
+
+
+def test_aipw_local_rf_matches_authors(dgp_a_poor):
+    params, df_auth, df = dgp_a_poor
+    Sim = dgp_fed().Simulations_Fed
+    state = np.random.get_state()
+    np.random.seed(22)
+    try:
+        with mock.patch.object(Sim, "combine_data",
+                               lambda self, dict_data=None: df_auth.copy()):
+            results, _ = Sim(params, n_simulations=1).estimate_aipw(
+                propensity_federations=["MW_logistic", "local"],
+                outcome_estimators=["GD"],
+                final_estimators=["GD-MW_logistic"],
+                propensity_estimation="random_forest",
+                use_grf=False,
+                generate_by_center=True,
+                params_for_federation=None,
+                params_for_federation_omega=None,
+                scale=False,
+                print_overlap=False,
+            )
+    finally:
+        np.random.set_state(state)
+
+    ours = estimate(df, local_ps="rf", aipw=True, mw_intercept=False, seed=22)
+
+    np.testing.assert_allclose(ours["tau"], results["GD-MW_logistic"][0], rtol=1e-10)
