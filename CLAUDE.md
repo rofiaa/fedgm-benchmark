@@ -82,8 +82,9 @@ cannot take an external data frame. Therefore:
     In `fed_ps.estimate`: `ipw_type="HT"` is **primary**, `"Hajek_pooled"` normalizes over
     all sites, `"Hajek"` = the authors' version, **parity tests only**. The notebook's
     Fig. 2/3 runs all use HT.
-  - F3: notebook DGP parameters differ from the paper (see DGPs below).
-  - F4: FedAvg with E > 1 local steps converges to a drifted fit (one class per site).
+  - F3: notebook DGP parameters differ from the paper (see DGPs below); Fig. 2's true-ATE
+    lines (A 8.72, B 4.78) are not reproduced by any derivable parameter set: unresolved.
+  - F4: known FedAvg client drift: E > 1 local steps, fixed step, label-skewed sites.
     `fed_ps.FEDAVG_MW_DEFAULTS` (benchmark): E=1, eta=1, globally standardized X, stop at
     relative Θ change < 1e-6, cap T=1000, rounds reached returned as `mw_rounds`.
     `FEDAVG_MW_NOTEBOOK` (T=30, E=3, eta=0.1, unscaled) is for parity only.
@@ -106,7 +107,7 @@ Defaults follow the **paper** (App. D); the notebook's values are named variants
 | DGP B n | 4000 | 1500 (`N_B_NOTEBOOK`) | 4.831 |
 `dgp_a_notebook_params()` / `dgp_b_notebook_params()` reproduce the notebook exactly; parity
 tests use them. The paper's μ₃ matches Fig. 2's true-ATE line (≈ 8.7) far better than the
-notebook's; a ≈ 0.25 gap remains (F3). γ vectors and the outcome polynomial follow the
+notebook's; a ≈ 0.27 gap to Fig. 2's line (8.72) remains unresolved (F3). γ vectors and the outcome polynomial follow the
 notebook's code (they differ from App. D Table 2; F3).
 - No standard errors are returned. We compute SEs ourselves: influence-function (sandwich) SE for
   IPW/AIPW, and/or bootstrap — needed for CI coverage.

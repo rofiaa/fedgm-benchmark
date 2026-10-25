@@ -8,9 +8,9 @@ Line numbers refer to `FedCaus_Obs/scripts/DGP_Fed.py` unless stated.
 | # | Finding | Affects paper results? | Our handling |
 |---|---|---|---|
 | F1 | Site ordering breaks for K ≥ 10 | Possibly F.1 / Table 1 (K = 30); not in repo | Columns reordered |
-| F2 | Site-wise Hajek IPW is inconsistent | No (paper/notebook use HT) | `Hajek_pooled` added; `Hajek` parity-only |
-| F3 | DGP A/B parameters: notebook ≠ paper | Fig. 2 true ATE | Paper values default, notebook as variants |
-| F4 | FedAvg with E > 1 converges to a drifted fit | Notebook Fig. 2a AIPW uses E = 3, T = 30 | Default E = 1, standardized X, stopping rule |
+| F2 | Site-wise Hajek IPW is inconsistent | **No**: all published figures use HT | `Hajek_pooled` added; `Hajek` parity-only |
+| F3 | DGP A/B parameters: notebook ≠ paper; Fig. 2 true ATE not reproduced | Fig. 2 true-ATE line; **unresolved** | Paper values default, notebook as variants |
+| F4 | Known FedAvg client drift (E > 1, fixed step, label-skewed sites) | Notebook Fig. 2a AIPW uses E = 3, T = 30 | Default E = 1, standardized X, stopping rule |
 | F5 | "Fed-AIPW unbiased at all overlap levels" (text) vs Fig. 2b | Text vs figure | Reproduction target narrowed |
 
 ---
@@ -66,10 +66,10 @@ once over all sites ("pooled Hajek") is also consistent.
 In A the pooled Hajek shares HT's upward bias, which comes from the misspecified
 logistic membership model (the paper: logistic MW is well specified only in DGP B).
 
-**Does it affect the paper?** No: every `estimate_ipw` call in
-`notebooks/simulations.ipynb` (Fig. 2, all overlap levels and both DGPs: cells 7, 15,
-25, 34, 43, 51; Fig. 3: cell 59) uses `ht_or_hajek="HT"`. `estimate_aipw` has no such
-option.
+**F2 does not affect the published figures.** Every `estimate_ipw` call in
+`notebooks/simulations.ipynb` uses `ht_or_hajek="HT"`: Fig. 2 (all three overlap levels,
+both DGPs: cells 7, 15, 25, 34, 43, 51) and Fig. 3 (cell 59). `estimate_aipw` has no
+Hajek option. The issue only matters to someone calling the code with `"Hajek"`.
 
 **Our handling.** `ipw_type="Hajek_pooled"` (`d321486`); `"Hajek"` reproduces the
 authors' estimator and is used only in parity tests. HT is primary in the benchmark.
@@ -79,7 +79,12 @@ Tests: `tests/test_fed_ps_parity.py::test_ipw_mw_logistic_matches_authors[*-Haje
 
 ---
 
-## F3. DGP parameters differ between the notebook and the paper
+## F3. DGP parameters differ between the notebook and the paper — **unresolved**
+
+**Status.** Timeboxed to one hour (17:59–18:01 on 2026-10-24; closed early after the
+checks below ran out of hypotheses). The parameter differences are documented; the
+figure's true-ATE values are **not** reproduced by any parameter set we can derive from
+the paper or the code. Needs input from the authors.
 
 **What.** `notebooks/simulations.ipynb` vs the paper's App. D:
 
@@ -97,14 +102,40 @@ the notebook's leading 0 multiplies X1 and the last entry multiplies the interce
 The outcome differences come from `generate_Y`'s polynomial branch iterating over
 `outcome_cols` (which include the intercept).
 
-**Evidence (μ₃).** Monte Carlo true ATE (10⁶ draws, MC SE ≈ 0.007) for DGP A:
-μ₃ = (3,3,3) → 9.776; μ₃ = (2,2,2) → 8.456. Fig. 2's true-ATE line for DGP A is at
-≈ 8.7 (read off the rendered figure), so the figure was made with something close to
-the paper's μ₃, not the notebook's. A gap of ≈ 0.25 remains unexplained (other
-parameter differences?). The level of the estimates matches better than the line:
-Fed-MW (logistic) IPW median ≈ 9.25 in Fig. 2b vs 9.34 in our MC (`d321486`).
-DGP B: our true ATE 4.831 vs the figure's ≈ 4.78 and the notebook's hard-coded
-`tau_star=4.74` (cell 37).
+**Fig. 2's true-ATE lines, measured.** Page 7 rendered at 600 dpi; the red line's pixel
+row interpolated between the two neighbouring gridlines: **DGP A 8.72** (left panel
+8.707, middle 8.734), **DGP B 4.78** (4.776).
+
+**What we get** (Monte Carlo, MC SE ≤ 0.008):
+
+| Candidate | DGP A true ATE | Gap to 8.72 |
+|---|---|---|
+| Code outcome, notebook μ₃ = (3,3,3) | 9.776 | +1.06 |
+| Code outcome, paper μ₃ = (2,2,2) | 8.456 | −0.27 |
+| Paper Table 2 outcome formula, paper μ₃ | 7.47 | −1.25 |
+| Paper Table 2 outcome formula, notebook μ₃ | 8.80 | +0.08 |
+| Plotter `tau_star="expectancy_of_tau"` (linear-β formula) | ≈ 3.05 | — |
+
+DGP B: ours 4.831, the figure 4.78, the notebook's hard-coded `tau_star=4.74` (cell 37):
+three different values for the same estimand.
+
+**Ruled out.**
+- *Notebook μ₃ with the code's outcome*: 9.78, far from 8.72.
+- *Paper's Table 2 formula*: 7.47 with the paper's μ₃. With the notebook's μ₃ it gives
+  8.80, closest of all, but that mixes the paper's outcome with the notebook's
+  covariates, and the code cannot produce that outcome.
+- *Unequal site weights*: per-site ATEs (paper μ₃) are 6.655 / 6.415 / 12.287; 8.72
+  needs weight 0.38 on site 3 (0.22 with the notebook's μ₃), not 1/3 from equal n_k.
+- *Other μ₃*: the code's outcome reaches 8.72 near μ₃ ≈ (2.25, 2.25, 2.25), which
+  neither source uses.
+- *The Plotter's other option*: the linear-β formula gives ≈ 3.05.
+- *An older code version*: the submodule has one upload commit (`c140d28`) plus a
+  folder rename (`e5f4409`); no history to compare.
+- *Monte Carlo noise*: MC SE ≤ 0.008, versus gaps of 0.05–0.27.
+
+The *estimates* match the figure better than the true-ATE line does: Fed-MW (logistic)
+IPW median ≈ 9.25 in Fig. 2b vs 9.34 in our MC (`d321486`). So the bias we report
+relative to our true ATE (+0.89 median) is larger than the figure suggests (≈ +0.55).
 
 **Our handling.** Defaults follow the paper; `dgp_a_notebook_params()` /
 `dgp_b_notebook_params()` and the constants above give the notebook's values
@@ -113,12 +144,18 @@ DGP B: our true ATE 4.831 vs the figure's ≈ 4.78 and the notebook's hard-coded
 
 ---
 
-## F4. FedAvg membership weights with E > 1 converge to a drifted fit
+## F4. FedAvg membership weights: known client drift with E > 1
 
-**What.** `federated_logistic_regression` (l. 291–317) is FedAvg with E full-batch local
-steps per round. Each site holds a single class (H = k), so local steps pull Θ toward
-"everything is my site"; with E > 1 the fixed point differs from the pooled
-multinomial-logistic optimum (client drift), by an amount that shrinks with η·E.
+**What.** This is the well-known *client drift* of FedAvg: with more than one local
+step per round (E > 1), a fixed step size η, and heterogeneous (here maximally
+label-skewed) sites, FedAvg converges to a fixed point that is not the minimizer of the
+global loss, with a bias that shrinks with η·E (e.g. Karimireddy et al., 2020,
+"SCAFFOLD"; Li et al., 2020, "On the Convergence of FedAvg on Non-IID Data"). It is not
+a coding error. `federated_logistic_regression` (l. 291–317) is FedAvg with E
+full-batch local steps; for membership weights every site holds a *single* class
+(H = k), the most extreme label skew, so local steps pull Θ toward "everything is my
+site". The paper's App. C.2 notes convergence to the centralized solution "with a
+suitable choice of learning rate and a moderate number of local steps".
 The notebook's `federation_parameters_omega` is T = 30, η = 0.1, E = 3; it is passed in
 the no-overlap DGP A **AIPW** cell (cell 8) and the DGP B no-overlap IPW cell (cell 15).
 
