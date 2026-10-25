@@ -75,15 +75,32 @@ cannot take an external data frame. Therefore:
   not FedAvg in this code.
 - `MW_estimation(..., scale=True)` fits Theta on unscaled X but predicts on scaled X → mismatch.
   Keep `scale=False` (default) or standardize X before calling.
-- `ipw_function(..., "Hajek")` is applied **per site with the global ê**, then sites are
-  averaged with n_k/n. Within a site, Σ W/ê(X) does not estimate n_k (E[e_k/e | H=k] ≠ 1),
-  so this Hajek is inconsistent: mini MC bias ≈ −1.0 in DGP B where MW is well specified;
-  Hajek normalized over the pooled sample is unbiased there. HT (used in the paper) is fine.
+- **Full log with evidence, commits and tests: `docs/findings.md`** (F1–F4). Summary:
+  - F1: membership columns come out in alphabetical site order → wrong for K ≥ 10.
+    `fed_ps` reorders them.
+  - F2: `ipw_function(..., "Hajek")` per site with the global ê is inconsistent.
+    In `fed_ps.estimate`: `ipw_type="HT"` is **primary**, `"Hajek_pooled"` normalizes over
+    all sites, `"Hajek"` = the authors' version, **parity tests only**. The notebook's
+    Fig. 2/3 runs all use HT.
+  - F3: notebook DGP parameters differ from the paper (see DGPs below).
+  - F4: FedAvg with E > 1 local steps converges to a drifted fit (one class per site).
+    `fed_ps.FEDAVG_MW_DEFAULTS` (benchmark): E=1, eta=1, globally standardized X, stop at
+    relative Θ change < 1e-6, cap T=1000, rounds reached returned as `mw_rounds`.
+    `FEDAVG_MW_NOTEBOOK` (T=30, E=3, eta=0.1, unscaled) is for parity only.
 - `generate_multivariate_mixtures_of_normals` (DGP B) uses `np.NaN`, removed in NumPy 2;
   `src/estimators/_authors.py` restores the alias before importing.
-- The notebook's DGP A uses mu_3 = (3,3,3,1,..) (true ATE ≈ 9.79); the paper's Table 3 has
-  (2,2,2,1,..) (≈ 8.44), which matches Fig. 2's true-ATE line (≈ 8.7) much better.
-  `src/dgps/authors.py` exposes both (`mu3_first`), plus n_k / n from the paper.
+
+### DGPs (`src/dgps/authors.py`, authors' generator)
+Defaults follow the **paper** (App. D); the notebook's values are named variants.
+| | Default (paper) | Notebook variant | True ATE (poor overlap) |
+|---|---|---|---|
+| DGP A μ₃ | (2,2,2,1,..) `MU3_PAPER` | (3,3,3,1,..) `MU3_NOTEBOOK` | 8.456 / 9.776 |
+| DGP A n_k | 650 | 500 (`N_K_NOTEBOOK`) | — |
+| DGP B n | 4000 | 1500 (`N_B_NOTEBOOK`) | 4.831 |
+`dgp_a_notebook_params()` / `dgp_b_notebook_params()` reproduce the notebook exactly; parity
+tests use them. The paper's μ₃ matches Fig. 2's true-ATE line (≈ 8.7) far better than the
+notebook's; a ≈ 0.25 gap remains (F3). γ vectors and the outcome polynomial follow the
+notebook's code (they differ from App. D Table 2; F3).
 - No standard errors are returned. We compute SEs ourselves: influence-function (sandwich) SE for
   IPW/AIPW, and/or bootstrap — needed for CI coverage.
 - `FedCaus_Obs/notebooks/simulations.ipynb` reproduces Fig. 2 (no / poor / good overlap × DGP A/B)
