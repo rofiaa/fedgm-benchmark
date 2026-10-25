@@ -11,6 +11,7 @@ Line numbers refer to `FedCaus_Obs/scripts/DGP_Fed.py` unless stated.
 | F2 | Site-wise Hajek IPW is inconsistent | No (paper/notebook use HT) | `Hajek_pooled` added; `Hajek` parity-only |
 | F3 | DGP A/B parameters: notebook ≠ paper | Fig. 2 true ATE | Paper values default, notebook as variants |
 | F4 | FedAvg with E > 1 converges to a drifted fit | Notebook Fig. 2a AIPW uses E = 3, T = 30 | Default E = 1, standardized X, stopping rule |
+| F5 | "Fed-AIPW unbiased at all overlap levels" (text) vs Fig. 2b | Text vs figure | Reproduction target narrowed |
 
 ---
 
@@ -141,6 +142,26 @@ rounds for A / A_mu3nb / B) and agreed with the pooled fit to 3 decimals.
 `FEDAVG_MW_NOTEBOOK` (T = 30, E = 3, η = 0.1, unscaled) reproduces the authors exactly.
 Tests: `tests/test_fed_ps.py::test_converged_fedavg_matches_pooled_fit[A, B]`,
 `tests/test_fed_ps_parity.py::test_ipw_mw_logistic_matches_authors[logistic_fedavg-*]`.
+
+---
+
+## F5. Fed-AIPW with logistic MW is biased in DGP A (poor overlap), as Fig. 2b shows
+
+**What.** §4.1 says Fed-AIPW "remains unbiased across all overlap levels by double
+robustness". In DGP A, however, *both* nuisance models are misspecified for Fed-MW
+(logistic): the membership model (the paper: logistic MW is well specified only in
+DGP B) and the linear outcome model (the outcome is polynomial). Double robustness then
+gives no guarantee. Fig. 2b (top) agrees with this, not with the text: the hatched green
+box (Fed-MW logistic, AIPW) sits at ≈ 9.5 against a true-ATE line at ≈ 8.7, while
+Fed-MW (NN) AIPW is centred on the line.
+
+**Evidence.** 20 reps, pooled logistic MW, pooled-OLS outcome (`fed_ps.estimate(aipw=True)`):
+DGP A (paper μ₃, τ = 8.456) bias +0.75 (SD 0.19); DGP B (τ = 4.831) bias +0.02 (SD 0.15).
+Same with the authors' FedAvg-SGD outcome fit (+0.75 / +0.02).
+
+**Our handling.** CLAUDE.md's reproduction target now reads "Fed-AIPW unbiased when
+either nuisance model is well specified (MW-NN, or DGP B)". AIPW parity:
+`tests/test_fed_ps_parity.py::test_aipw_mw_logistic_matches_authors[ols, fedavg]`.
 
 ---
 

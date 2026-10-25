@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from src.estimators._authors import dgp_fed
-from src.estimators.fed_ps import FEDAVG_MW_NOTEBOOK, estimate
+from src.estimators.fed_ps import FEDAVG_MW_NOTEBOOK, FEDAVG_OUTCOME_NOTEBOOK, estimate
 
 
 def run_authors_ipw(params, df_auth, ipw_type, omega_params=None):
@@ -52,4 +52,44 @@ def test_ipw_mw_logistic_matches_authors(dgp_a_poor, ipw_type, mw):
         ours["e_hat"].to_numpy(), df_theirs["hat_e_MW_logistic"].to_numpy(), rtol=1e-12
     )
     np.testing.assert_allclose(ours["tau"], tau_theirs, rtol=1e-10)
+    assert np.isfinite(ours["se"]) and ours["se"] > 0
+
+
+def run_authors_aipw(params, df_auth, outcome_params=None):
+    Sim = dgp_fed().Simulations_Fed
+    with mock.patch.object(Sim, "combine_data", lambda self, dict_data=None: df_auth.copy()):
+        results, df_out = Sim(params, n_simulations=1).estimate_aipw(
+            propensity_federations=["MW_logistic", "local"],
+            outcome_estimators=["GD"],
+            final_estimators=["GD-MW_logistic"],
+            propensity_estimation="logistic",
+            generate_by_center=True,
+            params_for_federation=outcome_params,  # None -> pooled OLS
+            params_for_federation_omega=None,       # pooled multinomial logistic
+            scale=False,
+            print_overlap=False,
+        )
+    assert len(results["GD-MW_logistic"]) == 1
+    return results["GD-MW_logistic"][0], df_out
+
+
+@pytest.mark.parametrize("outcome", ["ols", "fedavg"])
+def test_aipw_mw_logistic_matches_authors(dgp_a_poor, outcome):
+    params, df_auth, df = dgp_a_poor
+    outcome_params = FEDAVG_OUTCOME_NOTEBOOK if outcome == "fedavg" else None
+    tau_theirs, df_theirs = run_authors_aipw(params, df_auth, outcome_params)
+
+    # their AIPW path fits the membership model on X only (no intercept)
+    ours = estimate(df, aipw=True, mw="logistic", mw_intercept=False, outcome=outcome)
+
+    np.testing.assert_allclose(
+        ours["e_hat"].to_numpy(), df_theirs["hat_e_MW_logistic"].to_numpy(), rtol=1e-12
+    )
+    X_out = df_theirs[list(ours["outcome_coef"]["beta_1"].index)].to_numpy()
+    np.testing.assert_allclose(X_out @ ours["outcome_coef"]["beta_1"].to_numpy(),
+                               df_theirs["hat_mu1_GD"].to_numpy(), rtol=1e-8)
+    np.testing.assert_allclose(X_out @ ours["outcome_coef"]["beta_0"].to_numpy(),
+                               df_theirs["hat_mu0_GD"].to_numpy(), rtol=1e-8)
+    np.testing.assert_allclose(ours["tau"], tau_theirs, rtol=1e-10)
+    assert ours["outcome_fit"] == {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}[outcome]
     assert np.isfinite(ours["se"]) and ours["se"] > 0

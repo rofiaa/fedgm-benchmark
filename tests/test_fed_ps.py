@@ -63,7 +63,9 @@ def test_rejects_bad_site_labels(dgp_a_poor):
 def test_unimplemented_options_raise(dgp_a_poor):
     _, _, df = dgp_a_poor
     with pytest.raises(NotImplementedError):
-        estimate(df, aipw=True)
+        estimate(df, local_ps="rf")
+    with pytest.raises(ValueError, match="IPW only"):
+        estimate(df, aipw=True, ipw_type="Hajek_pooled")
     with pytest.raises(NotImplementedError, match="minibatches"):
         estimate(df, mw="logistic_fedavg", fedavg_params={"B_batch_size": 32})
 
@@ -84,6 +86,20 @@ def test_converged_fedavg_matches_pooled_fit(dgp_a_poor, dgp):
     gap = np.abs(fedavg["omega_hat"] - pooled["omega_hat"]).to_numpy().max()
     assert gap < 5e-3
     assert abs(fedavg["tau"] - pooled["tau"]) < 1e-2
+
+
+def test_aipw_terms_average_to_tau(dgp_a_poor):
+    _, _, df = dgp_a_poor
+    out = estimate(df, aipw=True)
+    X = df[[f"X{i}" for i in range(1, 11)]].assign(intercept=1.0).to_numpy()
+    mu1 = X @ out["outcome_coef"]["beta_1"].to_numpy()
+    mu0 = X @ out["outcome_coef"]["beta_0"].to_numpy()
+    W, Y, e = df["W"].to_numpy(), df["Y"].to_numpy(), out["e_hat"].to_numpy()
+    psi = mu1 - mu0 + W * (Y - mu1) / e - (1 - W) * (Y - mu0) / (1 - e)
+
+    assert np.isclose(psi.mean(), out["tau"], rtol=1e-12)
+    assert np.isclose(np.std(psi, ddof=1) / np.sqrt(len(psi)), out["se"], rtol=1e-12)
+    assert out["outcome_fit"] == "pooled-ols"
 
 
 def test_hajek_pooled_normalizes_over_all_sites(dgp_a_poor):

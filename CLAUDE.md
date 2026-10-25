@@ -75,7 +75,7 @@ cannot take an external data frame. Therefore:
   not FedAvg in this code.
 - `MW_estimation(..., scale=True)` fits Theta on unscaled X but predicts on scaled X → mismatch.
   Keep `scale=False` (default) or standardize X before calling.
-- **Full log with evidence, commits and tests: `docs/findings.md`** (F1–F4). Summary:
+- **Full log with evidence, commits and tests: `docs/findings.md`** (F1–F5). Summary:
   - F1: membership columns come out in alphabetical site order → wrong for K ≥ 10.
     `fed_ps` reorders them.
   - F2: `ipw_function(..., "Hajek")` per site with the global ê is inconsistent.
@@ -87,6 +87,13 @@ cannot take an external data frame. Therefore:
     `fed_ps.FEDAVG_MW_DEFAULTS` (benchmark): E=1, eta=1, globally standardized X, stop at
     relative Θ change < 1e-6, cap T=1000, rounds reached returned as `mw_rounds`.
     `FEDAVG_MW_NOTEBOOK` (T=30, E=3, eta=0.1, unscaled) is for parity only.
+  - F5: with logistic MW, Fed-AIPW is biased in DGP A (both nuisances misspecified), as
+    Fig. 2b shows, despite the text's "unbiased at all overlap levels".
+- AIPW in `fed_ps.estimate(aipw=True)`: linear outcome models on X + intercept, shared
+  by all sites; `outcome="ols"` (default; the authors' "GD" without federation params)
+  or `"fedavg"` (authors' clipped FedAvg-SGD, `FEDAVG_OUTCOME_NOTEBOOK`). The authors'
+  AIPW fits MW **without** an intercept; our default `mw_intercept=True`, parity tests
+  pass `mw_intercept=False`.
 - `generate_multivariate_mixtures_of_normals` (DGP B) uses `np.NaN`, removed in NumPy 2;
   `src/estimators/_authors.py` restores the alias before importing.
 
@@ -109,7 +116,9 @@ notebook's code (they differ from App. D Table 2; F3).
 
 ## Reproduction targets (qualitative, within Monte Carlo error)
 - No local overlap: Meta-SW undefined; Fed-IPW/AIPW-MW unbiased.
-- Poor local overlap: Meta-SW biased/unstable; Fed-AIPW unbiased.
+- Poor local overlap: Meta-SW biased/unstable; Fed-AIPW unbiased when either nuisance model is
+  well specified (MW-NN, or DGP B). With logistic MW in DGP A it is biased upward, as in
+  Fig. 2b (docs/findings.md, F5).
 - Fed-IPW-DW unbiased under DGP A, biased under DGP B.
 - Good overlap: all unbiased; federated estimators have the smallest variance.
 

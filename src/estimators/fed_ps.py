@@ -7,7 +7,8 @@ simulation loop, so we re-assemble the estimator from their standalone functions
     ê(x) = Σ_k ω̂_k(x) ê_k(x),   ω̂_k(x) = P̂(H = k | X = x),
 
 with ê_k fitted at site k and predicted on all rows, and
-τ̂ = Σ_k (n_k / n) τ̂_k, where τ̂_k is the IPW estimate on site k using the global ê.
+τ̂ = Σ_k (n_k / n) τ̂_k, where τ̂_k is the IPW (or AIPW) estimate on site k using the
+global ê (and, for AIPW, outcome models μ̂_0, μ̂_1 shared by all sites).
 """
 
 import time
@@ -23,8 +24,14 @@ _IMPLEMENTED = {
     "mw": {"logistic", "logistic_fedavg"},
     "local_ps": {"logistic"},
     "ipw_type": {"HT", "Hajek", "Hajek_pooled"},
-    "aipw": {False},
+    "aipw": {False, True},
+    "outcome": {"ols", "fedavg"},
 }
+
+# Outcome-model FedAvg (authors' fedavg_sgd_server_side): the notebook's
+# federation_parameters for AIPW. Fixed number of rounds, gradients clipped to [-1, 1].
+FEDAVG_OUTCOME_NOTEBOOK = {"T_rounds": 1000, "eta": 0.01, "E_local_steps": 1,
+                           "B_batch_size": None}
 
 # Membership-weight FedAvg: run until the relative change in Theta drops below `tol`,
 # at most T_rounds rounds. tol=None runs exactly T_rounds (the authors' behaviour).
@@ -39,6 +46,7 @@ FEDAVG_MW_NOTEBOOK = {"T_rounds": 30, "eta": 0.1, "E_local_steps": 3,
                       "B_batch_size": None, "tol": None, "standardize": False}
 
 _MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg"}
+_OUTCOME_FIT = {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}
 
 
 def estimate(
@@ -50,8 +58,10 @@ def estimate(
     seed=None,
     mw_intercept=True,
     fedavg_params=None,
+    outcome="ols",
+    outcome_fedavg_params=None,
 ):
-    """Federated IPW estimate of the ATE.
+    """Federated IPW / AIPW estimate of the ATE.
 
     df: columns X1..Xd, H (sites 0..K-1), W (0/1), Y.
     mw: membership-weight model for P(H|X). "logistic" = authors' MW_estimation_pooled
@@ -62,6 +72,13 @@ def estimate(
     ipw_type: "HT" (Horvitz-Thompson; primary), "Hajek_pooled" (weights normalized over
         all sites), or "Hajek" -- the authors' version, which normalizes within each
         site using the global ê and is inconsistent (docs/findings.md); parity only.
+        IPW only; must be "HT" when aipw=True.
+    aipw: augmented IPW with linear outcome models μ̂_w(x) = [x, 1]·β̂_w, as the authors'
+        "GD-MW_*" estimators.
+    outcome: outcome-model fit for aipw=True. "ols" = per-arm OLS on all sites' data
+        (the authors' "GD" when params_for_federation is None); "fedavg" = authors'
+        fedavg_sgd_server_side (clipped gradients, fixed rounds).
+    outcome_fedavg_params: overrides of FEDAVG_OUTCOME_NOTEBOOK for outcome="fedavg".
     mw_intercept: include an intercept in the membership model (the authors' IPW path
         does; their AIPW path does not).
     fedavg_params: overrides of FEDAVG_MW_DEFAULTS for mw="logistic_fedavg". Only
@@ -69,13 +86,16 @@ def estimate(
     seed: reserved for the stochastic variants; unused by the deterministic ones.
 
     Returns dict(tau, se, se_method, e_hat, e_local, omega_hat, n_k, smd, max_smd,
-    mw_fit, mw_rounds, mw_converged, outcome_fit, runtime). mw_rounds/mw_converged are
-    None unless mw="logistic_fedavg".
+    mw_fit, mw_rounds, mw_converged, outcome_fit, outcome_coef, runtime).
+    mw_rounds/mw_converged are None unless mw="logistic_fedavg"; outcome_fit and
+    outcome_coef (dict beta_1, beta_0 over X1..Xd, intercept) are None unless aipw=True.
     """
-    for name, value in [("mw", mw), ("local_ps", local_ps),
-                        ("ipw_type", ipw_type), ("aipw", aipw)]:
+    for name, value in [("mw", mw), ("local_ps", local_ps), ("ipw_type", ipw_type),
+                        ("aipw", aipw), ("outcome", outcome)]:
         if value not in _IMPLEMENTED[name]:
             raise NotImplementedError(f"{name}={value!r} is not implemented yet")
+    if aipw and ipw_type != "HT":
+        raise ValueError("ipw_type applies to IPW only; leave it at 'HT' with aipw=True")
     fedavg = {**FEDAVG_MW_DEFAULTS, **(fedavg_params or {})}
     if fedavg["B_batch_size"] is not None:
         raise NotImplementedError("FedAvg with minibatches (B_batch_size) is not supported")
@@ -103,7 +123,22 @@ def estimate(
     site_masks = [data["client"] == _label(k) for k in range(K)]
     n_k = np.array([mask.sum() for mask in site_masks])
     W, Y = data["W"].to_numpy(), data["Y"].to_numpy()
-    if ipw_type == "Hajek_pooled":
+    outcome_coef = None
+    if aipw:
+        beta_1, beta_0 = _outcome_models(A, data, ps_cols, K, outcome,
+                                         outcome_fedavg_params)
+        outcome_coef = {"beta_1": pd.Series(beta_1, index=ps_cols),
+                        "beta_0": pd.Series(beta_0, index=ps_cols)}
+        X_out = data[ps_cols].to_numpy()
+        data["mu1_hat"], data["mu0_hat"] = X_out @ beta_1, X_out @ beta_0
+        tau_k = [
+            A.aipw_function(data[mask], y1_col="mu1_hat", y0_col="mu0_hat", e_col="e_hat")
+            for mask in site_masks
+        ]
+        tau = float(np.average(tau_k, weights=n_k))
+        psi = _aipw_terms(W, Y, e_hat, data["mu1_hat"].to_numpy(),
+                          data["mu0_hat"].to_numpy())
+    elif ipw_type == "Hajek_pooled":
         tau = float(A.ipw_function(data, hat_e_name="e_hat", ht_or_hajek="Hajek"))
         all_rows = pd.Series(True, index=data.index)
         psi = _ipw_terms_hajek(W, Y, e_hat, [all_rows], [tau])
@@ -136,7 +171,8 @@ def estimate(
         mw_fit=_MW_FIT[mw],
         mw_rounds=mw_rounds,
         mw_converged=mw_converged,
-        outcome_fit=None,
+        outcome_fit=_OUTCOME_FIT[outcome] if aipw else None,
+        outcome_coef=outcome_coef,
         runtime=time.perf_counter() - start,
     )
 
@@ -245,6 +281,29 @@ def _fedavg_membership(A, data, mw_cols, K, T_rounds, eta, E_local_steps, tol,
     return A.softmax(X @ theta.T), t, converged
 
 
+def _outcome_models(A, data, out_cols, K, outcome, outcome_fedavg_params):
+    """Linear outcome models per arm, shared by all sites: (beta_1, beta_0)."""
+    if outcome == "ols":
+        return tuple(
+            np.asarray(A.estimate_beta_MLE(data[data["W"] == w], out_cols))
+            for w in (1, 0)
+        )
+    params = {**FEDAVG_OUTCOME_NOTEBOOK, **(outcome_fedavg_params or {})}
+    if params["B_batch_size"] is not None:
+        raise NotImplementedError("FedAvg with minibatches (B_batch_size) is not supported")
+    df_dict = {_label(k): data[data["client"] == _label(k)] for k in range(K)}
+    return tuple(
+        np.asarray(A.fedavg_sgd_server_side(
+            df_dict, out_cols, beta1_or_beta0_or_gamma=arm, **params
+        ))
+        for arm in ("beta1", "beta0")
+    )
+
+
+def _aipw_terms(W, Y, e, mu1, mu0):
+    return mu1 - mu0 + W * (Y - mu1) / e - (1 - W) * (Y - mu0) / (1 - e)
+
+
 def _ipw_terms_ht(W, Y, e):
     return W * Y / e - (1 - W) * Y / (1 - e)
 
@@ -274,6 +333,6 @@ def _ipw_terms_hajek(W, Y, e, site_masks, tau_k):
 
 def _if_se(psi):
     if not np.all(np.isfinite(psi)):
-        warnings.warn("non-finite IPW terms (ê hit 0 or 1); se is NaN")
+        warnings.warn("non-finite per-unit terms (ê hit 0 or 1); se is NaN")
         return float("nan")
     return float(np.std(psi, ddof=1) / np.sqrt(len(psi)))
