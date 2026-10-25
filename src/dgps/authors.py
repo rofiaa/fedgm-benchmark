@@ -30,6 +30,8 @@ N_B_PAPER, N_B_NOTEBOOK = 4000, 1500
 
 GAMMA_1 = [0, -0.25, 0.25, -0.25, -0.25, 0.25, -0.25, -0.25, 0.25, -0.25, 0.25]
 GAMMA_2_POOR = [0, -2.5, -1, -0.15, -0.15, 0, -0.15, -1, -0.15, -0.15, 0]
+GAMMA_2_GOOD = [0, -0.05, -0.1, -0.05, -0.1, 0.05, -0.1, -0.05, -0.1, 0.05, -0.1]
+OVERLAPS = ("no", "poor", "good")
 GAMMA_3 = [0, 0.15, -0.15, 0.15, -0.15, 0.15, -0.15, 0.15, -0.15, 0.15, -0.15]
 THETAS_B = np.array([
     [0, -0.5, -0.5, 0.2, -0.5, -0.5, 0.2, -0.5, -0.5, 0.2, 0.2],
@@ -62,22 +64,42 @@ def _shared_params():
     }
 
 
-def dgp_a_poor_overlap_params(n_k=N_K_PAPER, mu3_first=MU3_PAPER):
-    """DGP A, poor local overlap: site k draws n_k points from N(mu_k, Sigma_k)."""
+def _site2_treatment(overlap):
+    """Site 2's treatment model; it alone sets the local-overlap level (notebook cells
+    6/14: none, 24/33: poor, 42/50: good)."""
+    if overlap == "no":
+        return {"W_model": "0"}  # controls only: an external control arm
+    if overlap == "poor":
+        return {"gamma": GAMMA_2_POOR, "W_model": "logistic"}
+    if overlap == "good":
+        return {"gamma": GAMMA_2_GOOD, "W_model": "logistic"}
+    raise ValueError(f"overlap must be one of {OVERLAPS}")
+
+
+def dgp_a_params(overlap="poor", n_k=N_K_PAPER, mu3_first=MU3_PAPER):
+    """DGP A: site k draws n_k points from N(mu_k, Sigma_k)."""
     rest = [1] * (DIM_X - 3)
     specific = {
-        "client1": {"gamma": GAMMA_1, "mean_covariates": [1, 1, 1] + rest,
+        "client1": {"gamma": GAMMA_1, "W_model": "logistic",
+                    "mean_covariates": [1, 1, 1] + rest,
                     "cov_covariates": np.eye(DIM_X) + 0.5},
-        "client2": {"gamma": GAMMA_2_POOR, "mean_covariates": [1.5, 1.5, 1.5] + rest,
+        "client2": {**_site2_treatment(overlap),
+                    "mean_covariates": [1.5, 1.5, 1.5] + rest,
                     "cov_covariates": 0.6 * np.eye(DIM_X) + 0.4},
-        "client3": {"gamma": GAMMA_3, "mean_covariates": [mu3_first] * 3 + rest,
+        "client3": {"gamma": GAMMA_3, "W_model": "logistic",
+                    "mean_covariates": [mu3_first] * 3 + rest,
                     "cov_covariates": 3 * np.eye(DIM_X) + 0.3},
         "global_population": {},
     }
     for name in ("client1", "client2", "client3"):
-        specific[name].update(sample_size=n_k, W_model="logistic")
+        specific[name]["sample_size"] = n_k
     shared = _shared_params()
     return {name: {**shared, **spec} for name, spec in specific.items()}
+
+
+def dgp_a_poor_overlap_params(n_k=N_K_PAPER, mu3_first=MU3_PAPER):
+    """DGP A, poor local overlap (= dgp_a_params("poor", ...))."""
+    return dgp_a_params("poor", n_k=n_k, mu3_first=mu3_first)
 
 
 def dgp_a_notebook_params():
@@ -91,8 +113,13 @@ def dgp_b_notebook_params():
 
 
 def dgp_b_poor_overlap_params(n=N_B_PAPER):
-    """DGP B, poor local overlap: n points from a 2-component Gaussian mixture, sent to
-    sites by a multinomial logistic model in X."""
+    """DGP B, poor local overlap (= dgp_b_params("poor", ...))."""
+    return dgp_b_params("poor", n=n)
+
+
+def dgp_b_params(overlap="poor", n=N_B_PAPER):
+    """DGP B: n points from a 2-component Gaussian mixture, sent to sites by a
+    multinomial logistic model in X."""
     shared = _shared_params()
     shared.update(
         mean_covariates=[np.zeros(DIM_X), np.full(DIM_X, 1.5)],
@@ -101,7 +128,7 @@ def dgp_b_poor_overlap_params(n=N_B_PAPER):
     )
     specific = {
         "client1": {"gamma": GAMMA_1},
-        "client2": {"gamma": GAMMA_2_POOR},
+        "client2": _site2_treatment(overlap),
         "client3": {"gamma": GAMMA_3},
         "global_population": {
             "sample_size": n,

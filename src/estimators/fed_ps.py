@@ -53,6 +53,9 @@ _MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg",
 _OUTCOME_FIT = {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}
 
 
+ESTIMANDS = ("IPW-HT", "IPW-Hajek_pooled", "IPW-Hajek", "AIPW")
+
+
 def estimate(
     df,
     mw="logistic",
@@ -104,71 +107,131 @@ def estimate(
         (fitted in site order), which reproduces the authors' unseeded forests after a
         global np.random.seed(seed); returned as ps_seed.
 
-    Returns dict(tau, se, se_method, ci_if, e_hat, e_local, omega_hat, n_k, smd,
-    max_smd, mw_fit, mw_rounds, mw_converged, mw_seed, local_ps_fit, ps_seed,
-    outcome_fit, outcome_coef, runtime).
-    se / ci_if are the IF-based SE and normal 95% CI. mw_rounds/mw_converged are None
-    unless mw="logistic_fedavg"; outcome_fit and outcome_coef (dict beta_1, beta_0 over
-    X1..Xd, intercept) are None unless aipw=True. With bootstrap > 0, also: se_boot,
-    ci_boot_percentile (2.5%, 97.5%), boot_B, boot_ok, boot_failed, boot_arm_loss
-    (replicates where a site lost a treatment arm), boot_arm_loss_by_site, boot_mw_fit,
-    boot_seed_entropy, boot_taus.
+    Returns the frozen keys (src/estimators/common.py) plus ci_if, estimand, e_hat,
+    e_local, omega_hat, n_k, smd, mw_fit, mw_rounds, mw_converged, mw_seed,
+    local_ps_fit, ps_seed, outcome_fit, outcome_coef. se / ci_if are the IF-based SE
+    and normal 95% CI. mw_rounds/mw_converged are None unless mw="logistic_fedavg";
+    outcome_fit and outcome_coef (dict beta_1, beta_0 over X1..Xd, intercept) are None
+    unless aipw=True. With bootstrap > 0, also: se_boot, ci_boot_percentile (2.5%,
+    97.5%), boot_B, boot_ok, boot_failed, boot_arm_loss (replicates where a site lost a
+    treatment arm), boot_arm_loss_by_site, boot_mw_fit, boot_seed_entropy, boot_taus.
     """
-    for name, value in [("mw", mw), ("local_ps", local_ps), ("ipw_type", ipw_type),
-                        ("aipw", aipw), ("outcome", outcome)]:
-        if value not in _IMPLEMENTED[name]:
-            raise NotImplementedError(f"{name}={value!r} is not implemented yet")
     if aipw and ipw_type != "HT":
         raise ValueError("ipw_type applies to IPW only; leave it at 'HT' with aipw=True")
+    if ipw_type not in _IMPLEMENTED["ipw_type"] or aipw not in _IMPLEMENTED["aipw"]:
+        raise NotImplementedError(f"ipw_type={ipw_type!r}, aipw={aipw!r}")
+    name = "AIPW" if aipw else f"IPW-{ipw_type}"
+    return estimate_multi(
+        df, [name], mw=mw, local_ps=local_ps, seed=seed, mw_intercept=mw_intercept,
+        fedavg_params=fedavg_params, outcome=outcome,
+        outcome_fedavg_params=outcome_fedavg_params, bootstrap=bootstrap,
+    )[name]
+
+
+def estimate_multi(
+    df,
+    estimands,
+    mw="logistic",
+    local_ps="logistic",
+    seed=None,
+    mw_intercept=True,
+    fedavg_params=None,
+    outcome="ols",
+    outcome_fedavg_params=None,
+    bootstrap=0,
+    bootstrap_for=None,
+):
+    """Several federated estimators from **one** fit of the nuisances.
+
+    estimands: names from ESTIMANDS ("IPW-HT", "IPW-Hajek_pooled", "IPW-Hajek", "AIPW").
+    bootstrap_for: the estimands that get the site-stratified bootstrap (default: all
+        of them when bootstrap > 0). Each bootstrap replicate refits the nuisances once
+        and evaluates every estimand in bootstrap_for on them.
+    Other arguments as in estimate().
+
+    Returns {estimand: result}, each result with the same keys as estimate(); `runtime`
+    is the wall-clock time of the whole call (shared fits included) and
+    `runtime_shared_by` lists the estimands it covers.
+    """
+    estimands = list(dict.fromkeys(estimands))
+    unknown = set(estimands) - set(ESTIMANDS)
+    if unknown:
+        raise NotImplementedError(f"estimands {sorted(unknown)} are not implemented")
+    for name, value in [("mw", mw), ("local_ps", local_ps), ("outcome", outcome)]:
+        if value not in _IMPLEMENTED[name]:
+            raise NotImplementedError(f"{name}={value!r} is not implemented yet")
     fedavg = {**FEDAVG_MW_DEFAULTS, **(fedavg_params or {})}
     if fedavg["B_batch_size"] is not None:
         raise NotImplementedError("FedAvg with minibatches (B_batch_size) is not supported")
-    cfg = dict(mw=mw, ipw_type=ipw_type, aipw=aipw, mw_intercept=mw_intercept,
-               fedavg=fedavg, outcome=outcome, outcome_fedavg_params=outcome_fedavg_params,
+    bootstrap_for = list(estimands) if bootstrap_for is None else list(bootstrap_for)
+    if not set(bootstrap_for) <= set(estimands):
+        raise ValueError("bootstrap_for must be a subset of estimands")
+    if not bootstrap:
+        bootstrap_for = []
+    aipw = "AIPW" in estimands
+    cfg = dict(mw=mw, mw_intercept=mw_intercept, fedavg=fedavg, local_ps=local_ps,
                mw_seed=_int_seed(seed, 63) if mw == "nn" else None,
-               local_ps=local_ps,
-               ps_seed=_int_seed(seed, 32) if local_ps == "rf" else None)
+               ps_seed=_int_seed(seed, 32) if local_ps == "rf" else None,
+               outcome=outcome, outcome_fedavg_params=outcome_fedavg_params)
 
     start = time.perf_counter()
     A = dgp_fed()
     data, x_cols, K = _to_authors_frame(df)
-    fit = _fit(A, data, x_cols, K, **cfg)
-    e_hat = fit["e_hat"]
+    nuis = _fit_nuisances(A, data, x_cols, K, need_outcome=aipw, **cfg)
+    fits = _estimands(A, data, x_cols, K, nuis, estimands)
+    e_hat = nuis["e_hat"]
 
     weights = np.where(data["W"] == 1, 1 / e_hat, 1 / (1 - e_hat))
     balance = smd(data[x_cols], data["W"], weights)
-
     index = df.index
-    out = dict(
-        tau=fit["tau"],
-        se=fit["se"],
-        se_method="influence function, nuisances treated as fixed (provisional)",
-        ci_if=(fit["tau"] - _Z95 * fit["se"], fit["tau"] + _Z95 * fit["se"]),
+    shared = dict(
         e_hat=pd.Series(e_hat, index=index, name="e_hat"),
-        e_local=pd.DataFrame(fit["e_local"], index=index, columns=range(K)),
-        omega_hat=pd.DataFrame(fit["omega"], index=index, columns=range(K)),
-        n_k=dict(enumerate(fit["n_k"].tolist())),
+        e_local=pd.DataFrame(nuis["e_local"], index=index, columns=range(K)),
+        omega_hat=pd.DataFrame(nuis["omega"], index=index, columns=range(K)),
+        n_k=dict(enumerate(nuis["n_k"].tolist())),
         smd=balance,
         max_smd=float(balance.abs().max()),
         mw_fit=_MW_FIT[mw],
-        mw_rounds=fit["mw_rounds"],
-        mw_converged=fit["mw_converged"],
+        mw_rounds=nuis["mw_rounds"],
+        mw_converged=nuis["mw_converged"],
         mw_seed=cfg["mw_seed"],
         local_ps_fit=local_ps,
         ps_seed=cfg["ps_seed"],
-        outcome_fit=_OUTCOME_FIT[outcome] if aipw else None,
-        outcome_coef=fit["outcome_coef"],
     )
-    if bootstrap:
-        out.update(_site_stratified_bootstrap(A, data, x_cols, K, cfg, bootstrap, seed))
-    out["runtime"] = time.perf_counter() - start
-    return out
+    outcome_coef = None
+    if aipw:
+        outcome_coef = {"beta_1": pd.Series(nuis["beta_1"], index=x_cols + ["intercept"]),
+                        "beta_0": pd.Series(nuis["beta_0"], index=x_cols + ["intercept"])}
+
+    boot = {}
+    if bootstrap_for:
+        boot_cfg = dict(cfg, estimands=bootstrap_for)
+        boot = _site_stratified_bootstrap(A, data, x_cols, K, boot_cfg, bootstrap, seed,
+                                          fit=_fit_taus)
+
+    runtime = time.perf_counter() - start
+    results = {}
+    for name in estimands:
+        tau, se = fits[name]["tau"], fits[name]["se"]
+        results[name] = dict(
+            tau=tau,
+            se=se,
+            se_method="influence function, nuisances treated as fixed (provisional)",
+            ci_if=(tau - _Z95 * se, tau + _Z95 * se),
+            estimand=name,
+            **shared,
+            outcome_fit=_OUTCOME_FIT[outcome] if name == "AIPW" else None,
+            outcome_coef=outcome_coef if name == "AIPW" else None,
+            **boot.get(name, {}),
+            runtime=runtime,
+            runtime_shared_by=list(estimands),
+        )
+    return results
 
 
-def _fit(A, data, x_cols, K, mw, ipw_type, aipw, mw_intercept, fedavg, outcome,
-         outcome_fedavg_params, mw_seed, local_ps, ps_seed):
-    """Fit all nuisances on `data` (authors' layout) and compute τ̂ and its IF SE."""
-    data = data.copy()
+def _fit_nuisances(A, data, x_cols, K, mw, mw_intercept, fedavg, local_ps, mw_seed,
+                   ps_seed, outcome, outcome_fedavg_params, need_outcome):
+    """Local PS, membership weights, global ê and (if needed) outcome models."""
     ps_cols = x_cols + ["intercept"]
     mw_cols = x_cols + ["intercept"] if mw_intercept else x_cols
 
@@ -186,49 +249,67 @@ def _fit(A, data, x_cols, K, mw, ipw_type, aipw, mw_intercept, fedavg, outcome,
             fedavg["E_local_steps"], fedavg["tol"], fedavg["standardize"],
         )
     e_hat = A.membership_weighting_vectorized(pd.DataFrame(omega), pd.DataFrame(e_local))
-    data["e_hat"] = e_hat
-
-    site_masks = [data["client"] == _label(k) for k in range(K)]
-    n_k = np.array([mask.sum() for mask in site_masks])
-    W, Y = data["W"].to_numpy(), data["Y"].to_numpy()
-    outcome_coef = None
-    if aipw:
+    n_k = np.array([(data["client"] == _label(k)).sum() for k in range(K)])
+    beta_1 = beta_0 = None
+    if need_outcome:
         beta_1, beta_0 = _outcome_models(A, data, ps_cols, K, outcome,
                                          outcome_fedavg_params)
-        outcome_coef = {"beta_1": pd.Series(beta_1, index=ps_cols),
-                        "beta_0": pd.Series(beta_0, index=ps_cols)}
-        X_out = data[ps_cols].to_numpy()
-        data["mu1_hat"], data["mu0_hat"] = X_out @ beta_1, X_out @ beta_0
-        tau_k = [
-            A.aipw_function(data[mask], y1_col="mu1_hat", y0_col="mu0_hat", e_col="e_hat")
-            for mask in site_masks
-        ]
-        tau = float(np.average(tau_k, weights=n_k))
-        psi = _aipw_terms(W, Y, e_hat, data["mu1_hat"].to_numpy(),
-                          data["mu0_hat"].to_numpy())
-    elif ipw_type == "Hajek_pooled":
-        tau = float(A.ipw_function(data, hat_e_name="e_hat", ht_or_hajek="Hajek"))
-        all_rows = pd.Series(True, index=data.index)
-        psi = _ipw_terms_hajek(W, Y, e_hat, [all_rows], [tau])
-    else:
-        tau_k = [
-            A.ipw_function(data[mask], hat_e_name="e_hat", ht_or_hajek=ipw_type)
-            for mask in site_masks
-        ]
-        tau = float(np.average(tau_k, weights=n_k))
-        if ipw_type == "HT":
-            psi = _ipw_terms_ht(W, Y, e_hat)
+    return dict(e_local=e_local, omega=omega, e_hat=e_hat, n_k=n_k, mw_rounds=mw_rounds,
+                mw_converged=mw_converged, beta_1=beta_1, beta_0=beta_0)
+
+
+def _estimands(A, data, x_cols, K, nuis, names):
+    """τ̂ and IF SE of each estimand in `names` from fitted nuisances."""
+    data = data.copy()
+    e_hat = nuis["e_hat"]
+    data["e_hat"] = e_hat
+    site_masks = [data["client"] == _label(k) for k in range(K)]
+    n_k = nuis["n_k"]
+    W, Y = data["W"].to_numpy(), data["Y"].to_numpy()
+    out = {}
+    for name in names:
+        if name == "AIPW":
+            X_out = data[x_cols + ["intercept"]].to_numpy()
+            mu1, mu0 = X_out @ nuis["beta_1"], X_out @ nuis["beta_0"]
+            data["mu1_hat"], data["mu0_hat"] = mu1, mu0
+            tau_k = [
+                A.aipw_function(data[m], y1_col="mu1_hat", y0_col="mu0_hat", e_col="e_hat")
+                for m in site_masks
+            ]
+            tau = float(np.average(tau_k, weights=n_k))
+            psi = _aipw_terms(W, Y, e_hat, mu1, mu0)
+        elif name == "IPW-Hajek_pooled":
+            tau = float(A.ipw_function(data, hat_e_name="e_hat", ht_or_hajek="Hajek"))
+            all_rows = pd.Series(True, index=data.index)
+            psi = _ipw_terms_hajek(W, Y, e_hat, [all_rows], [tau])
         else:
-            psi = _ipw_terms_hajek(W, Y, e_hat, site_masks, tau_k)
+            ipw_type = name.removeprefix("IPW-")
+            tau_k = [
+                A.ipw_function(data[m], hat_e_name="e_hat", ht_or_hajek=ipw_type)
+                for m in site_masks
+            ]
+            tau = float(np.average(tau_k, weights=n_k))
+            if ipw_type == "HT":
+                psi = _ipw_terms_ht(W, Y, e_hat)
+            else:
+                psi = _ipw_terms_hajek(W, Y, e_hat, site_masks, tau_k)
+        out[name] = dict(tau=tau, se=_if_se(psi))
+    return out
 
-    return dict(tau=tau, se=_if_se(psi), e_hat=e_hat, e_local=e_local, omega=omega,
-                n_k=n_k, mw_rounds=mw_rounds, mw_converged=mw_converged,
-                outcome_coef=outcome_coef)
+
+def _fit_taus(A, data, x_cols, K, estimands, **cfg):
+    """Bootstrap fit: refit the nuisances once, return {estimand: τ̂}."""
+    nuis = _fit_nuisances(A, data, x_cols, K, need_outcome="AIPW" in estimands, **cfg)
+    return {name: r["tau"] for name, r in _estimands(A, data, x_cols, K, nuis,
+                                                      estimands).items()}
 
 
-def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed, fit=None):
+def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed, fit):
     """Nonparametric bootstrap that resamples rows within each site (n_k fixed) and
     refits every nuisance (local PS, MW, outcome models) in each replicate.
+
+    `fit(A, data, x_cols, K, **cfg)` returns {estimand: τ̂} for one dataset; one call per
+    replicate, so all estimands share the replicate's fits. Returns {estimand: extras}.
 
     MW is refit with the pooled multinomial logistic fit even when mw="logistic_fedavg":
     converged FedAvg reaches the same fit (tests/test_fed_ps.py), at a fraction of the
@@ -236,11 +317,9 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed, fit=None):
     Replicate b draws from np.random.default_rng(SeedSequence(seed).spawn(B)[b]); its NN
     and RF seeds come from two further children of that sequence.
     A replicate in which some site that had both arms keeps only one is counted in
-    boot_arm_loss; it is still estimated (that site's ê_k becomes the constant 0 or 1).
-    `fit(A, data, x_cols, K, **cfg)` -> dict with "tau" (default: this module's _fit);
-    meta_sw passes its own. cfg keys "mw" / "local_ps" switch on the NN / RF seeding.
+    boot_arm_loss; it is still estimated (fed_ps: that site's ê_k becomes the constant 0
+    or 1; meta_sw: τ̂_b is NaN and counts as failed).
     """
-    fit = fit or _fit
     seq = np.random.SeedSequence(seed)
     site_rows = [np.flatnonzero(data["client"].to_numpy() == _label(k)) for k in range(K)]
     W = data["W"].to_numpy()
@@ -248,10 +327,11 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed, fit=None):
     boot_cfg = dict(cfg)
     if boot_cfg.get("mw") == "logistic_fedavg":
         boot_cfg["mw"] = "logistic"
+    names = list(cfg["estimands"])
 
-    taus = np.full(B, np.nan)
+    taus = {name: np.full(B, np.nan) for name in names}
     arm_loss_by_site = np.zeros(K, dtype=int)
-    arm_loss = failed = 0
+    arm_loss = 0
     for b, child in enumerate(seq.spawn(B)):
         rng = np.random.default_rng(child)
         nn_seq, rf_seq = child.spawn(2)
@@ -267,25 +347,32 @@ def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed, fit=None):
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                taus[b] = fit(A, data.iloc[idx].reset_index(drop=True), x_cols, K,
-                              **boot_cfg)["tau"]
-        except Exception:  # e.g. a singular refit; counted, not fatal
-            failed += 1
-    ok = taus[np.isfinite(taus)]
-    failed += B - failed - len(ok)
-    return dict(
-        se_boot=float(np.std(ok, ddof=1)) if len(ok) > 1 else float("nan"),
-        ci_boot_percentile=tuple(np.percentile(ok, [2.5, 97.5])) if len(ok) else
-        (float("nan"), float("nan")),
+                rep = fit(A, data.iloc[idx].reset_index(drop=True), x_cols, K, **boot_cfg)
+            for name in names:
+                taus[name][b] = rep[name]
+        except Exception:  # e.g. a singular refit; counted as failed, not fatal
+            pass
+
+    shared = dict(
         boot_B=B,
-        boot_ok=len(ok),
-        boot_failed=failed,
         boot_arm_loss=int(arm_loss),
         boot_arm_loss_by_site=dict(enumerate(arm_loss_by_site.tolist())),
         boot_mw_fit=_MW_FIT.get(boot_cfg.get("mw")),
         boot_seed_entropy=seq.entropy,
-        boot_taus=taus,
     )
+    out = {}
+    for name in names:
+        ok = taus[name][np.isfinite(taus[name])]
+        out[name] = dict(
+            se_boot=float(np.std(ok, ddof=1)) if len(ok) > 1 else float("nan"),
+            ci_boot_percentile=tuple(float(q) for q in np.percentile(ok, [2.5, 97.5]))
+            if len(ok) else (float("nan"), float("nan")),
+            boot_ok=len(ok),
+            boot_failed=B - len(ok),
+            boot_taus=taus[name],
+            **shared,
+        )
+    return out
 
 
 def _label(k):

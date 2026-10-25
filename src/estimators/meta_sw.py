@@ -31,11 +31,8 @@ from src.estimators.fed_ps import (
     _to_authors_frame,
 )
 
-_IMPLEMENTED = {
-    "local_ps": {"logistic", "rf"},
-    "ipw_type": {"HT", "Hajek"},
-    "aipw": {False, True},
-}
+ESTIMANDS = ("IPW-HT", "IPW-Hajek", "AIPW")
+_IMPLEMENTED = {"local_ps": {"logistic", "rf"}}
 
 
 def estimate(df, local_ps="logistic", ipw_type="HT", aipw=False, seed=None, bootstrap=0):
@@ -52,55 +49,86 @@ def estimate(df, local_ps="logistic", ipw_type="HT", aipw=False, seed=None, boot
         fed_ps._site_stratified_bootstrap. Replicates in which a site loses an arm give
         τ̂_b = NaN and count as failed.
 
-    Returns the frozen keys (src/estimators/common.py) plus ci_if, tau_k (per site),
-    n_k, undefined_reason, smd, local_ps_fit, ps_seed, outcome_fit, and the bootstrap
-    extras of fed_ps.estimate when bootstrap > 0. se is the IF SE from the per-unit
-    local terms (nuisances treated as fixed).
+    Returns the frozen keys (src/estimators/common.py) plus ci_if, estimand, tau_k (per
+    site), n_k, undefined_reason, e_own, smd, local_ps_fit, ps_seed, outcome_fit, and
+    the bootstrap extras of fed_ps.estimate when bootstrap > 0. se is the IF SE from the
+    per-unit local terms (nuisances treated as fixed).
     """
-    for name, value in [("local_ps", local_ps), ("ipw_type", ipw_type), ("aipw", aipw)]:
-        if value not in _IMPLEMENTED[name]:
-            raise NotImplementedError(f"{name}={value!r} is not implemented")
     if aipw and ipw_type != "HT":
         raise ValueError("ipw_type applies to IPW only; leave it at 'HT' with aipw=True")
-    cfg = dict(ipw_type=ipw_type, aipw=aipw, local_ps=local_ps,
-               ps_seed=_int_seed(seed, 32) if local_ps == "rf" else None)
+    name = "AIPW" if aipw else f"IPW-{ipw_type}"
+    if name not in ESTIMANDS:
+        raise NotImplementedError(f"ipw_type={ipw_type!r} is not implemented")
+    return estimate_multi(df, [name], local_ps=local_ps, seed=seed,
+                          bootstrap=bootstrap)[name]
+
+
+def estimate_multi(df, estimands, local_ps="logistic", seed=None, bootstrap=0,
+                   bootstrap_for=None):
+    """Several Meta-SW estimators from one fit of the local nuisances.
+
+    estimands: names from ESTIMANDS. bootstrap_for: estimands that get the bootstrap
+    (default: all when bootstrap > 0). Returns {estimand: result} as in estimate();
+    `runtime` covers the whole call and `runtime_shared_by` lists the estimands.
+    """
+    estimands = list(dict.fromkeys(estimands))
+    unknown = set(estimands) - set(ESTIMANDS)
+    if unknown:
+        raise NotImplementedError(f"estimands {sorted(unknown)} are not implemented")
+    if local_ps not in _IMPLEMENTED["local_ps"]:
+        raise NotImplementedError(f"local_ps={local_ps!r} is not implemented")
+    bootstrap_for = list(estimands) if bootstrap_for is None else list(bootstrap_for)
+    if not set(bootstrap_for) <= set(estimands):
+        raise ValueError("bootstrap_for must be a subset of estimands")
+    if not bootstrap:
+        bootstrap_for = []
+    cfg = dict(local_ps=local_ps, ps_seed=_int_seed(seed, 32) if local_ps == "rf" else None)
 
     start = time.perf_counter()
     A = dgp_fed()
     data, x_cols, K = _to_authors_frame(df)
-    fit = _fit(A, data, x_cols, K, **cfg)
+    fit = _fit(A, data, x_cols, K, estimands=estimands, **cfg)
 
     e_own = fit["e_own"]
-    if np.isfinite(fit["tau"]):
+    if fit["undefined_reason"] is None:
         weights = np.where(data["W"] == 1, 1 / e_own, 1 / (1 - e_own))
         balance = smd(data[x_cols], data["W"], weights)
         max_smd = float(balance.abs().max())
     else:
         balance, max_smd = None, float("nan")
 
-    out = dict(
-        tau=fit["tau"],
-        se=fit["se"],
-        se_method="influence function, nuisances treated as fixed (provisional)",
-        ci_if=(fit["tau"] - _Z95 * fit["se"], fit["tau"] + _Z95 * fit["se"]),
-        max_smd=max_smd,
-        tau_k=dict(enumerate(fit["tau_k"])),
-        n_k=dict(enumerate(fit["n_k"].tolist())),
-        undefined_reason=fit["undefined_reason"],
-        e_own=pd.Series(e_own, index=df.index, name="e_own"),
-        smd=balance,
-        local_ps_fit=local_ps,
-        ps_seed=cfg["ps_seed"],
-        outcome_fit="local-ols" if aipw else None,
-    )
-    if bootstrap:
-        out.update(_site_stratified_bootstrap(A, data, x_cols, K, cfg, bootstrap, seed,
-                                              fit=_fit))
-    out["runtime"] = time.perf_counter() - start
-    return out
+    boot = {}
+    if bootstrap_for:
+        boot = _site_stratified_bootstrap(A, data, x_cols, K,
+                                          dict(cfg, estimands=bootstrap_for),
+                                          bootstrap, seed, fit=_fit_taus)
+    runtime = time.perf_counter() - start
+    results = {}
+    for name in estimands:
+        tau, se = fit["est"][name]["tau"], fit["est"][name]["se"]
+        results[name] = dict(
+            tau=tau,
+            se=se,
+            se_method="influence function, nuisances treated as fixed (provisional)",
+            ci_if=(tau - _Z95 * se, tau + _Z95 * se),
+            max_smd=max_smd,
+            estimand=name,
+            tau_k=dict(enumerate(fit["est"][name]["tau_k"])),
+            n_k=dict(enumerate(fit["n_k"].tolist())),
+            undefined_reason=fit["undefined_reason"],
+            e_own=pd.Series(e_own, index=df.index, name="e_own"),
+            smd=balance,
+            local_ps_fit=local_ps,
+            ps_seed=cfg["ps_seed"],
+            outcome_fit="local-ols" if name == "AIPW" else None,
+            **boot.get(name, {}),
+            runtime=runtime,
+            runtime_shared_by=list(estimands),
+        )
+    return results
 
 
-def _fit(A, data, x_cols, K, ipw_type, aipw, local_ps, ps_seed):
+def _fit(A, data, x_cols, K, estimands, local_ps, ps_seed):
     """Per-site estimates with local nuisances, aggregated with n_k / n."""
     data = data.copy()
     ps_cols = x_cols + ["intercept"]
@@ -115,39 +143,47 @@ def _fit(A, data, x_cols, K, ipw_type, aipw, local_ps, ps_seed):
     e_own = e_local[np.arange(len(data)), [int(c[6:]) - 1 for c in data["client"]]]
     if single_arm:
         nan = float("nan")
-        return dict(tau=nan, se=nan, tau_k=[nan] * K, n_k=n_k, e_own=e_own,
+        est = {name: dict(tau=nan, se=nan, tau_k=[nan] * K) for name in estimands}
+        return dict(est=est, n_k=n_k, e_own=e_own,
                     undefined_reason=f"sites {single_arm} have a single treatment arm")
 
-    for k, mask in enumerate(site_masks):
-        data.loc[mask, "e_own"] = e_local[mask.to_numpy(), k]
-    if aipw:
-        X_out = data[ps_cols].to_numpy()
-        mu1, mu0 = np.empty(len(data)), np.empty(len(data))
-        for mask in site_masks:
-            site = data[mask]
-            m = mask.to_numpy()
-            beta_1 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 1], ps_cols))
-            beta_0 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 0], ps_cols))
-            mu1[m], mu0[m] = X_out[m] @ beta_1, X_out[m] @ beta_0
-        data["mu1_hat"], data["mu0_hat"] = mu1, mu0
-        tau_k = [
-            A.aipw_function(data[mask], y1_col="mu1_hat", y0_col="mu0_hat", e_col="e_own")
-            for mask in site_masks
-        ]
-        psi = _aipw_terms(W, Y, e_own, mu1, mu0)
-    else:
-        tau_k = [
-            A.ipw_function(data[mask], hat_e_name="e_own", ht_or_hajek=ipw_type)
-            for mask in site_masks
-        ]
-        if ipw_type == "HT":
-            psi = _ipw_terms_ht(W, Y, e_own)
+    data["e_own"] = e_own
+    est = {}
+    for name in estimands:
+        if name == "AIPW":
+            X_out = data[ps_cols].to_numpy()
+            mu1, mu0 = np.empty(len(data)), np.empty(len(data))
+            for mask in site_masks:
+                site = data[mask]
+                m = mask.to_numpy()
+                beta_1 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 1], ps_cols))
+                beta_0 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 0], ps_cols))
+                mu1[m], mu0[m] = X_out[m] @ beta_1, X_out[m] @ beta_0
+            data["mu1_hat"], data["mu0_hat"] = mu1, mu0
+            tau_k = [
+                A.aipw_function(data[m], y1_col="mu1_hat", y0_col="mu0_hat", e_col="e_own")
+                for m in site_masks
+            ]
+            psi = _aipw_terms(W, Y, e_own, mu1, mu0)
         else:
-            psi = _ipw_terms_hajek(W, Y, e_own, site_masks, tau_k)
+            ipw_type = name.removeprefix("IPW-")
+            tau_k = [
+                A.ipw_function(data[m], hat_e_name="e_own", ht_or_hajek=ipw_type)
+                for m in site_masks
+            ]
+            if ipw_type == "HT":
+                psi = _ipw_terms_ht(W, Y, e_own)
+            else:
+                psi = _ipw_terms_hajek(W, Y, e_own, site_masks, tau_k)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            se = _if_se(psi)
+        est[name] = dict(tau=float(np.average(tau_k, weights=n_k)), se=se,
+                         tau_k=[float(t) for t in tau_k])
+    return dict(est=est, n_k=n_k, e_own=e_own, undefined_reason=None)
 
-    tau = float(np.average(tau_k, weights=n_k))
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        se = _if_se(psi)
-    return dict(tau=tau, se=se, tau_k=[float(t) for t in tau_k], n_k=n_k, e_own=e_own,
-                undefined_reason=None)
+
+def _fit_taus(A, data, x_cols, K, estimands, **cfg):
+    """Bootstrap fit: {estimand: τ̂} (NaN when a site lost an arm)."""
+    fit = _fit(A, data, x_cols, K, estimands=estimands, **cfg)
+    return {name: fit["est"][name]["tau"] for name in estimands}
