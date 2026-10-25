@@ -45,6 +45,9 @@ FEDAVG_MW_DEFAULTS = {"T_rounds": 1000, "eta": 1.0, "E_local_steps": 1,
 FEDAVG_MW_NOTEBOOK = {"T_rounds": 30, "eta": 0.1, "E_local_steps": 3,
                       "B_batch_size": None, "tol": None, "standardize": False}
 
+BOOTSTRAP_B = 200
+_Z95 = 1.959963984540054
+
 _MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg"}
 _OUTCOME_FIT = {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}
 
@@ -60,6 +63,7 @@ def estimate(
     fedavg_params=None,
     outcome="ols",
     outcome_fedavg_params=None,
+    bootstrap=0,
 ):
     """Federated IPW / AIPW estimate of the ATE.
 
@@ -83,12 +87,19 @@ def estimate(
         does; their AIPW path does not).
     fedavg_params: overrides of FEDAVG_MW_DEFAULTS for mw="logistic_fedavg". Only
         B_batch_size=None is supported: minibatches are drawn from numpy's global RNG.
-    seed: reserved for the stochastic variants; unused by the deterministic ones.
+    bootstrap: number of site-stratified bootstrap replicates B (0 = off; the benchmark
+        uses BOOTSTRAP_B = 200). See _site_stratified_bootstrap.
+    seed: seeds the bootstrap through np.random.SeedSequence(seed) and its spawned
+        children; None draws fresh entropy (returned as boot_seed_entropy).
 
-    Returns dict(tau, se, se_method, e_hat, e_local, omega_hat, n_k, smd, max_smd,
-    mw_fit, mw_rounds, mw_converged, outcome_fit, outcome_coef, runtime).
-    mw_rounds/mw_converged are None unless mw="logistic_fedavg"; outcome_fit and
-    outcome_coef (dict beta_1, beta_0 over X1..Xd, intercept) are None unless aipw=True.
+    Returns dict(tau, se, se_method, ci_if, e_hat, e_local, omega_hat, n_k, smd,
+    max_smd, mw_fit, mw_rounds, mw_converged, outcome_fit, outcome_coef, runtime).
+    se / ci_if are the IF-based SE and normal 95% CI. mw_rounds/mw_converged are None
+    unless mw="logistic_fedavg"; outcome_fit and outcome_coef (dict beta_1, beta_0 over
+    X1..Xd, intercept) are None unless aipw=True. With bootstrap > 0, also: se_boot,
+    ci_boot_percentile (2.5%, 97.5%), boot_B, boot_ok, boot_failed, boot_arm_loss
+    (replicates where a site lost a treatment arm), boot_arm_loss_by_site, boot_mw_fit,
+    boot_seed_entropy, boot_taus.
     """
     for name, value in [("mw", mw), ("local_ps", local_ps), ("ipw_type", ipw_type),
                         ("aipw", aipw), ("outcome", outcome)]:
@@ -99,10 +110,46 @@ def estimate(
     fedavg = {**FEDAVG_MW_DEFAULTS, **(fedavg_params or {})}
     if fedavg["B_batch_size"] is not None:
         raise NotImplementedError("FedAvg with minibatches (B_batch_size) is not supported")
+    cfg = dict(mw=mw, ipw_type=ipw_type, aipw=aipw, mw_intercept=mw_intercept,
+               fedavg=fedavg, outcome=outcome, outcome_fedavg_params=outcome_fedavg_params)
 
     start = time.perf_counter()
     A = dgp_fed()
     data, x_cols, K = _to_authors_frame(df)
+    fit = _fit(A, data, x_cols, K, **cfg)
+    e_hat = fit["e_hat"]
+
+    weights = np.where(data["W"] == 1, 1 / e_hat, 1 / (1 - e_hat))
+    balance = smd(data[x_cols], data["W"], weights)
+
+    index = df.index
+    out = dict(
+        tau=fit["tau"],
+        se=fit["se"],
+        se_method="influence function, nuisances treated as fixed (provisional)",
+        ci_if=(fit["tau"] - _Z95 * fit["se"], fit["tau"] + _Z95 * fit["se"]),
+        e_hat=pd.Series(e_hat, index=index, name="e_hat"),
+        e_local=pd.DataFrame(fit["e_local"], index=index, columns=range(K)),
+        omega_hat=pd.DataFrame(fit["omega"], index=index, columns=range(K)),
+        n_k=dict(enumerate(fit["n_k"].tolist())),
+        smd=balance,
+        max_smd=float(balance.abs().max()),
+        mw_fit=_MW_FIT[mw],
+        mw_rounds=fit["mw_rounds"],
+        mw_converged=fit["mw_converged"],
+        outcome_fit=_OUTCOME_FIT[outcome] if aipw else None,
+        outcome_coef=fit["outcome_coef"],
+    )
+    if bootstrap:
+        out.update(_site_stratified_bootstrap(A, data, x_cols, K, cfg, bootstrap, seed))
+    out["runtime"] = time.perf_counter() - start
+    return out
+
+
+def _fit(A, data, x_cols, K, mw, ipw_type, aipw, mw_intercept, fedavg, outcome,
+         outcome_fedavg_params):
+    """Fit all nuisances on `data` (authors' layout) and compute τ̂ and its IF SE."""
+    data = data.copy()
     ps_cols = x_cols + ["intercept"]
     mw_cols = x_cols + ["intercept"] if mw_intercept else x_cols
 
@@ -152,28 +199,59 @@ def estimate(
             psi = _ipw_terms_ht(W, Y, e_hat)
         else:
             psi = _ipw_terms_hajek(W, Y, e_hat, site_masks, tau_k)
-    se = _if_se(psi)
 
-    weights = np.where(data["W"] == 1, 1 / e_hat, 1 / (1 - e_hat))
-    balance = smd(data[x_cols], data["W"], weights)
+    return dict(tau=tau, se=_if_se(psi), e_hat=e_hat, e_local=e_local, omega=omega,
+                n_k=n_k, mw_rounds=mw_rounds, mw_converged=mw_converged,
+                outcome_coef=outcome_coef)
 
-    index = df.index
+
+def _site_stratified_bootstrap(A, data, x_cols, K, cfg, B, seed):
+    """Nonparametric bootstrap that resamples rows within each site (n_k fixed) and
+    refits every nuisance (local PS, MW, outcome models) in each replicate.
+
+    MW is refit with the pooled multinomial logistic fit even when mw="logistic_fedavg":
+    converged FedAvg reaches the same fit (tests/test_fed_ps.py), at a fraction of the
+    cost. Replicate b draws from np.random.default_rng(SeedSequence(seed).spawn(B)[b]).
+    A replicate in which some site that had both arms keeps only one is counted in
+    boot_arm_loss; it is still estimated (that site's ê_k becomes the constant 0 or 1).
+    """
+    seq = np.random.SeedSequence(seed)
+    site_rows = [np.flatnonzero(data["client"].to_numpy() == _label(k)) for k in range(K)]
+    W = data["W"].to_numpy()
+    had_both = [len(np.unique(W[rows])) == 2 for rows in site_rows]
+    boot_cfg = {**cfg, "mw": "logistic" if cfg["mw"] == "logistic_fedavg" else cfg["mw"]}
+
+    taus = np.full(B, np.nan)
+    arm_loss_by_site = np.zeros(K, dtype=int)
+    arm_loss = failed = 0
+    for b, child in enumerate(seq.spawn(B)):
+        rng = np.random.default_rng(child)
+        draws = [rng.choice(rows, size=len(rows)) for rows in site_rows]
+        lost = [both and len(np.unique(W[d])) < 2 for both, d in zip(had_both, draws)]
+        idx = np.concatenate(draws)
+        arm_loss += any(lost)
+        arm_loss_by_site += np.array(lost)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                taus[b] = _fit(A, data.iloc[idx].reset_index(drop=True), x_cols, K,
+                               **boot_cfg)["tau"]
+        except Exception:  # e.g. a singular refit; counted, not fatal
+            failed += 1
+    ok = taus[np.isfinite(taus)]
+    failed += B - failed - len(ok)
     return dict(
-        tau=tau,
-        se=se,
-        se_method="influence function, nuisances treated as fixed (provisional)",
-        e_hat=pd.Series(e_hat, index=index, name="e_hat"),
-        e_local=pd.DataFrame(e_local, index=index, columns=range(K)),
-        omega_hat=pd.DataFrame(omega, index=index, columns=range(K)),
-        n_k=dict(enumerate(n_k.tolist())),
-        smd=balance,
-        max_smd=float(balance.abs().max()),
-        mw_fit=_MW_FIT[mw],
-        mw_rounds=mw_rounds,
-        mw_converged=mw_converged,
-        outcome_fit=_OUTCOME_FIT[outcome] if aipw else None,
-        outcome_coef=outcome_coef,
-        runtime=time.perf_counter() - start,
+        se_boot=float(np.std(ok, ddof=1)) if len(ok) > 1 else float("nan"),
+        ci_boot_percentile=tuple(np.percentile(ok, [2.5, 97.5])) if len(ok) else
+        (float("nan"), float("nan")),
+        boot_B=B,
+        boot_ok=len(ok),
+        boot_failed=failed,
+        boot_arm_loss=int(arm_loss),
+        boot_arm_loss_by_site=dict(enumerate(arm_loss_by_site.tolist())),
+        boot_mw_fit=_MW_FIT[boot_cfg["mw"]],
+        boot_seed_entropy=seq.entropy,
+        boot_taus=taus,
     )
 
 
