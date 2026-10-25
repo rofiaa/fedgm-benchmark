@@ -1,13 +1,16 @@
 """Mini Monte Carlo: Fed-IPW with logistic membership weights, poor local overlap.
 
 For each scenario, draws `--reps` datasets with the authors' generator and runs
-fed_ps.estimate with mw in {pooled logistic, FedAvg logistic} x ipw_type in {HT, Hajek}.
-Reports bias vs the true ATE, empirical SD, mean IF SE, RMSE, 95% CI coverage and width.
+fed_ps.estimate with mw in {pooled logistic, FedAvg logistic} x ipw_type in
+{HT, Hajek_pooled}. (The authors' site-wise "Hajek" is inconsistent and is kept for the
+parity tests only; docs/findings.md.) FedAvg uses fed_ps.FEDAVG_MW_DEFAULTS.
+Reports mean and median bias vs the true ATE, empirical SD, mean IF SE, RMSE, 95% CI
+coverage and width, and the FedAvg rounds reached.
 
-Scenarios (sample sizes follow the paper, App. D; everything else follows the notebook):
-  A        DGP A, n_k = 650 per site (notebook: 500), notebook mu_3 = (3,3,3,1,..)
-  A_mu3p   same, but the paper's mu_3 = (2,2,2,1,..) (Table 3) -- for the Fig. 2 comparison
-  B        DGP B, n = 4000 (notebook: 1500)
+Scenarios (paper's App. D values unless noted; see src/dgps/authors.py):
+  A          DGP A, n_k = 650, paper mu_3 = (2,2,2,1,..)
+  A_mu3nb    DGP A, n_k = 650, notebook mu_3 = (3,3,3,1,..)
+  B          DGP B, n = 4000
 
 Usage: python experiments/mini_mc.py [--reps 100] [--seed 2026] [--out results]
 Writes <out>/mini_mc_reps.csv (one row per rep x method) and <out>/mini_mc_summary.csv.
@@ -25,6 +28,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.dgps.authors import (  # noqa: E402
+    MU3_NOTEBOOK,
     dgp_a_poor_overlap_params,
     dgp_b_poor_overlap_params,
     generate,
@@ -33,14 +37,14 @@ from src.dgps.authors import (  # noqa: E402
 from src.estimators.fed_ps import estimate  # noqa: E402
 
 SCENARIOS = {
-    "A": ("A", lambda: dgp_a_poor_overlap_params(n_k=650)),
-    "A_mu3p": ("A", lambda: dgp_a_poor_overlap_params(n_k=650, mu3_first=2)),
-    "B": ("B", lambda: dgp_b_poor_overlap_params(n=4000)),
+    "A": ("A", dgp_a_poor_overlap_params),
+    "A_mu3nb": ("A", lambda: dgp_a_poor_overlap_params(mu3_first=MU3_NOTEBOOK)),
+    "B": ("B", dgp_b_poor_overlap_params),
 }
 METHODS = [
     (mw, ipw_type)
     for mw in ("logistic", "logistic_fedavg")
-    for ipw_type in ("HT", "Hajek")
+    for ipw_type in ("HT", "Hajek_pooled")
 ]
 
 
@@ -66,6 +70,8 @@ def run_scenario(name, reps, seed_seq, truth_n):
                 row.update(tau=out["tau"], se=out["se"], max_smd=out["max_smd"],
                            min_e_hat=float(out["e_hat"].min()),
                            max_e_hat=float(out["e_hat"].max()),
+                           mw_rounds=out["mw_rounds"],
+                           mw_converged=out["mw_converged"],
                            runtime=out["runtime"], error="")
             except Exception as exc:  # record and keep going
                 row.update(tau=np.nan, se=np.nan, error=repr(exc))
@@ -89,6 +95,7 @@ def summarize(reps_df):
             "mean_tau": ok["tau"].mean(),
             "bias": err.mean(),
             "bias_mcse": ok["tau"].std(ddof=1) / np.sqrt(len(ok)),
+            "median_bias": err.median(),
             "emp_sd": ok["tau"].std(ddof=1),
             "mean_se": ok["se"].mean(),
             "se_ratio": ok["se"].mean() / ok["tau"].std(ddof=1),
@@ -97,6 +104,11 @@ def summarize(reps_df):
             "ci_width": (2 * 1.96 * ok["se"]).mean(),
             "mean_max_smd": ok["max_smd"].mean(),
             "mean_runtime_s": ok["runtime"].mean(),
+            # FedAvg only (NaN for the pooled fit)
+            "mw_rounds_median": ok["mw_rounds"].median(),
+            "mw_rounds_max": ok["mw_rounds"].max(),
+            "mw_converged_frac": ok["mw_converged"].dropna().astype(bool).mean()
+            if ok["mw_converged"].notna().any() else np.nan,
         })
 
     return (
@@ -132,8 +144,8 @@ def main():
     with pd.option_context("display.width", 200, "display.max_columns", 20,
                            "display.float_format", "{:.3f}".format):
         print(summary[["scenario", "mw", "ipw_type", "tau_true", "n_failed", "bias",
-                       "bias_mcse", "emp_sd", "mean_se", "rmse", "coverage",
-                       "ci_width"]])
+                       "bias_mcse", "median_bias", "emp_sd", "mean_se", "rmse",
+                       "coverage", "ci_width", "mw_rounds_max", "mw_converged_frac"]])
     print(f"done in {time.perf_counter() - start:.0f}s -> {args.out}/mini_mc_*.csv")
 
 

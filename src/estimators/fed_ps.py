@@ -22,12 +22,21 @@ from src.estimators.balance import smd
 _IMPLEMENTED = {
     "mw": {"logistic", "logistic_fedavg"},
     "local_ps": {"logistic"},
-    "ipw_type": {"HT", "Hajek"},
+    "ipw_type": {"HT", "Hajek", "Hajek_pooled"},
     "aipw": {False},
 }
 
-# Notebook values for the membership-weight FedAvg (federation_parameters_omega).
-FEDAVG_MW_DEFAULTS = {"T_rounds": 30, "eta": 0.1, "E_local_steps": 3, "B_batch_size": None}
+# Membership-weight FedAvg: run until the relative change in Theta drops below `tol`,
+# at most T_rounds rounds. tol=None runs exactly T_rounds (the authors' behaviour).
+# E_local_steps=1: with E > 1 and one class per site, FedAvg converges to a different
+# point than the pooled fit (client drift; docs/findings.md). standardize=True rescales
+# X by its global mean/SD (shareable as per-site sums) so eta=1 converges in < 1000
+# rounds; the intercept makes the fitted probabilities invariant to this rescaling.
+FEDAVG_MW_DEFAULTS = {"T_rounds": 1000, "eta": 1.0, "E_local_steps": 1,
+                      "B_batch_size": None, "tol": 1e-6, "standardize": True}
+# The notebook's federation_parameters_omega; used for parity with the authors' code.
+FEDAVG_MW_NOTEBOOK = {"T_rounds": 30, "eta": 0.1, "E_local_steps": 3,
+                      "B_batch_size": None, "tol": None, "standardize": False}
 
 _MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg"}
 
@@ -47,10 +56,12 @@ def estimate(
     df: columns X1..Xd, H (sites 0..K-1), W (0/1), Y.
     mw: membership-weight model for P(H|X). "logistic" = authors' MW_estimation_pooled
         (a centralized multinomial fit, the default in their code); "logistic_fedavg" =
-        authors' MW_estimation (FedAvg multinomial logistic, full-batch local steps).
+        FedAvg multinomial logistic with full-batch local steps (authors' algorithm and
+        gradient, plus a stopping rule; see FEDAVG_MW_DEFAULTS).
     local_ps: local propensity model e_k(x). "logistic" = authors' compute_gamma.
-    ipw_type: "HT" (Horvitz-Thompson) or "Hajek". As in the authors' code, Hajek
-        normalizes the weights within each site, then sites are averaged with n_k/n.
+    ipw_type: "HT" (Horvitz-Thompson; primary), "Hajek_pooled" (weights normalized over
+        all sites), or "Hajek" -- the authors' version, which normalizes within each
+        site using the global ê and is inconsistent (docs/findings.md); parity only.
     mw_intercept: include an intercept in the membership model (the authors' IPW path
         does; their AIPW path does not).
     fedavg_params: overrides of FEDAVG_MW_DEFAULTS for mw="logistic_fedavg". Only
@@ -58,7 +69,8 @@ def estimate(
     seed: reserved for the stochastic variants; unused by the deterministic ones.
 
     Returns dict(tau, se, se_method, e_hat, e_local, omega_hat, n_k, smd, max_smd,
-    mw_fit, outcome_fit, runtime).
+    mw_fit, mw_rounds, mw_converged, outcome_fit, runtime). mw_rounds/mw_converged are
+    None unless mw="logistic_fedavg".
     """
     for name, value in [("mw", mw), ("local_ps", local_ps),
                         ("ipw_type", ipw_type), ("aipw", aipw)]:
@@ -75,27 +87,36 @@ def estimate(
     mw_cols = x_cols + ["intercept"] if mw_intercept else x_cols
 
     e_local = _local_propensities(A, data, ps_cols, K)
+    mw_rounds = mw_converged = None
     if mw == "logistic":
-        omega = A.MW_estimation_pooled(data, mw_cols, scale=False)
+        omega = _site_order_numeric(
+            A.MW_estimation_pooled(data, mw_cols, scale=False).to_numpy(), K
+        )
     else:
-        omega = A.MW_estimation(data, mw_cols, **fedavg, scale=False)
-    omega = _site_order_numeric(omega.to_numpy(), K)
+        omega, mw_rounds, mw_converged = _fedavg_membership(
+            A, data, mw_cols, K, fedavg["T_rounds"], fedavg["eta"],
+            fedavg["E_local_steps"], fedavg["tol"], fedavg["standardize"],
+        )
     e_hat = A.membership_weighting_vectorized(pd.DataFrame(omega), pd.DataFrame(e_local))
     data["e_hat"] = e_hat
 
     site_masks = [data["client"] == _label(k) for k in range(K)]
     n_k = np.array([mask.sum() for mask in site_masks])
-    tau_k = [
-        A.ipw_function(data[mask], hat_e_name="e_hat", ht_or_hajek=ipw_type)
-        for mask in site_masks
-    ]
-    tau = float(np.average(tau_k, weights=n_k))
-
     W, Y = data["W"].to_numpy(), data["Y"].to_numpy()
-    if ipw_type == "HT":
-        psi = _ipw_terms_ht(W, Y, e_hat)
+    if ipw_type == "Hajek_pooled":
+        tau = float(A.ipw_function(data, hat_e_name="e_hat", ht_or_hajek="Hajek"))
+        all_rows = pd.Series(True, index=data.index)
+        psi = _ipw_terms_hajek(W, Y, e_hat, [all_rows], [tau])
     else:
-        psi = _ipw_terms_hajek(W, Y, e_hat, site_masks, tau_k)
+        tau_k = [
+            A.ipw_function(data[mask], hat_e_name="e_hat", ht_or_hajek=ipw_type)
+            for mask in site_masks
+        ]
+        tau = float(np.average(tau_k, weights=n_k))
+        if ipw_type == "HT":
+            psi = _ipw_terms_ht(W, Y, e_hat)
+        else:
+            psi = _ipw_terms_hajek(W, Y, e_hat, site_masks, tau_k)
     se = _if_se(psi)
 
     weights = np.where(data["W"] == 1, 1 / e_hat, 1 / (1 - e_hat))
@@ -113,6 +134,8 @@ def estimate(
         smd=balance,
         max_smd=float(balance.abs().max()),
         mw_fit=_MW_FIT[mw],
+        mw_rounds=mw_rounds,
+        mw_converged=mw_converged,
         outcome_fit=None,
         runtime=time.perf_counter() - start,
     )
@@ -180,12 +203,55 @@ def _site_order_numeric(proba, K):
     return proba[:, [alphabetical.index(_label(k)) for k in range(K)]]
 
 
+def _fedavg_membership(A, data, mw_cols, K, T_rounds, eta, E_local_steps, tol,
+                       standardize):
+    """FedAvg multinomial logistic regression for P(H|X), full-batch local steps.
+
+    Same algorithm as the authors' federated_logistic_regression / MW_estimation
+    (their gradient_multi_logistic and softmax; Theta starts at 0; each round, every
+    site takes E full-batch gradient steps from the global Theta and the server averages
+    with weights n_k/n), with three differences: classes are in numeric site order; the
+    loop stops once ||Theta_t - Theta_{t-1}||_F / ||Theta_{t-1}||_F < tol; and with
+    standardize=True the non-intercept columns are rescaled by their global mean/SD
+    (unlike their scale=True, which fits unscaled and predicts scaled).
+    Their per-step shuffle (df.sample) does not affect a full-batch gradient.
+
+    Returns (omega (n, K), rounds run, converged); converged is None when tol is None.
+    """
+    X = data[mw_cols].to_numpy()
+    if standardize:
+        cols = [i for i, c in enumerate(mw_cols) if c != "intercept"]
+        X = X.copy()
+        X[:, cols] = (X[:, cols] - X[:, cols].mean(axis=0)) / X[:, cols].std(axis=0)
+    H = np.eye(K)[[int(c.removeprefix("client")) - 1 for c in data["client"]]]
+    sites = [H[:, k] == 1 for k in range(K)]
+    n_k = np.array([s.sum() for s in sites])
+
+    theta = np.zeros((K, X.shape[1]))
+    converged = None if tol is None else False
+    for t in range(1, T_rounds + 1):
+        updates = []
+        for s in sites:
+            theta_k = theta
+            for _ in range(E_local_steps):
+                theta_k = theta_k - eta * A.gradient_multi_logistic(X[s], theta_k, H[s])
+            updates.append(theta_k)
+        theta_new = np.average(updates, weights=n_k, axis=0)
+        change = np.linalg.norm(theta_new - theta) / max(np.linalg.norm(theta), 1e-300)
+        theta = theta_new
+        if tol is not None and change < tol:
+            converged = True
+            break
+    return A.softmax(X @ theta.T), t, converged
+
+
 def _ipw_terms_ht(W, Y, e):
     return W * Y / e - (1 - W) * Y / (1 - e)
 
 
 def _ipw_terms_hajek(W, Y, e, site_masks, tau_k):
-    """Linearized per-unit terms of the site-wise Hajek estimator.
+    """Linearized per-unit terms of a Hajek estimator normalized within each group in
+    `site_masks` (sites for the authors' "Hajek", one all-rows group for "Hajek_pooled").
 
     For unit i in site k: tau_k + (n_k/N1_k) W (Y - m1_k)/e - (n_k/N0_k) (1-W)(Y - m0_k)/(1-e),
     with N1_k = Σ_k W/e and m1_k the site's weighted treated mean (same for controls).

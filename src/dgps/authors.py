@@ -1,13 +1,17 @@
 """DGP A and DGP B generated with the authors' own code (Simulations_Fed).
 
 Parameters are copied from FedCaus_Obs/notebooks/simulations.ipynb, cells 1, 22-24
-(DGP A, "Some overlap") and 31-33 (DGP B). Where the notebook differs from the paper's
-App. D, the notebook value is the default and the difference is noted:
-  - DGP A n_k: notebook 500, paper Table 3: 650           -> `n_k` argument
-  - DGP A mu_3: notebook (3,3,3,1,..), paper (2,2,2,1,..) -> `mu3_first` argument
-  - DGP B n: notebook 1500, paper Table 4: 4000           -> `n` argument
-  - gamma vectors: the notebook's leading 0 multiplies X1 (treatment_cols puts the
-    intercept last), i.e. they are shifted by one position relative to App. D.
+(DGP A, "Some overlap") and 31-33 (DGP B). Where the notebook and the paper's App. D
+disagree, the defaults follow the paper and the notebook value is a named variant
+(see docs/findings.md):
+  - DGP A n_k: paper Table 3: 650 (default), notebook 500 (N_K_NOTEBOOK)
+  - DGP A mu_3: paper (2,2,2,1,..) (MU3_PAPER, default), notebook (3,3,3,1,..)
+    (MU3_NOTEBOOK). The paper's value reproduces Fig. 2's true-ATE line.
+  - DGP B n: paper Table 4: 4000 (default), notebook 1500 (N_B_NOTEBOOK)
+  - gamma vectors: kept as in the notebook, whose leading 0 multiplies X1
+    (treatment_cols puts the intercept last), i.e. shifted by one position relative
+    to App. D.
+`dgp_a_notebook_params()` / `dgp_b_notebook_params()` give the notebook's settings.
 """
 
 from contextlib import contextmanager
@@ -19,6 +23,10 @@ from src.estimators._authors import dgp_fed
 
 DIM_X = 10
 X_COLS = [f"X{i}" for i in range(1, DIM_X + 1)]
+
+N_K_PAPER, N_K_NOTEBOOK = 650, 50 * DIM_X
+MU3_PAPER, MU3_NOTEBOOK = 2, 3
+N_B_PAPER, N_B_NOTEBOOK = 4000, 1500
 
 GAMMA_1 = [0, -0.25, 0.25, -0.25, -0.25, 0.25, -0.25, -0.25, 0.25, -0.25, 0.25]
 GAMMA_2_POOR = [0, -2.5, -1, -0.15, -0.15, 0, -0.15, -1, -0.15, -0.15, 0]
@@ -54,7 +62,7 @@ def _shared_params():
     }
 
 
-def dgp_a_poor_overlap_params(n_k=50 * DIM_X, mu3_first=3):
+def dgp_a_poor_overlap_params(n_k=N_K_PAPER, mu3_first=MU3_PAPER):
     """DGP A, poor local overlap: site k draws n_k points from N(mu_k, Sigma_k)."""
     rest = [1] * (DIM_X - 3)
     specific = {
@@ -72,7 +80,17 @@ def dgp_a_poor_overlap_params(n_k=50 * DIM_X, mu3_first=3):
     return {name: {**shared, **spec} for name, spec in specific.items()}
 
 
-def dgp_b_poor_overlap_params(n=1500):
+def dgp_a_notebook_params():
+    """DGP A, poor local overlap, exactly as in the notebook (n_k=500, mu_3=(3,3,3,..))."""
+    return dgp_a_poor_overlap_params(n_k=N_K_NOTEBOOK, mu3_first=MU3_NOTEBOOK)
+
+
+def dgp_b_notebook_params():
+    """DGP B, poor local overlap, exactly as in the notebook (n=1500)."""
+    return dgp_b_poor_overlap_params(n=N_B_NOTEBOOK)
+
+
+def dgp_b_poor_overlap_params(n=N_B_PAPER):
     """DGP B, poor local overlap: n points from a 2-component Gaussian mixture, sent to
     sites by a multinomial logistic model in X."""
     shared = _shared_params()

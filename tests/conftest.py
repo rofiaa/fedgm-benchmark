@@ -2,13 +2,13 @@
 
 import pytest
 
-from src.dgps.authors import dgp_a_poor_overlap_params, generate
+from src.dgps.authors import dgp_a_notebook_params, generate
 
 
 @pytest.fixture(scope="session")
 def dgp_a_poor():
-    """One DGP A poor-overlap dataset with the notebook's settings (n_k = 500):
-    (authors' params, authors' frame, our frame)."""
-    params = dgp_a_poor_overlap_params()
+    """One DGP A poor-overlap dataset with the notebook's settings (n_k = 500,
+    mu_3 = (3,3,3,..)): (authors' params, authors' frame, our frame)."""
+    params = dgp_a_notebook_params()
     df_auth, df = generate(params, "A", seed=0)
     return params, df_auth, df
