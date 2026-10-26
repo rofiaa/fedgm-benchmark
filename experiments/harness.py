@@ -203,40 +203,92 @@ def _worker(config_path, scenario_name, config_ids, rep, tau_true):
     return run_rep(scenarios[0], configs, rep, module.BASE_SEED, tau_true)
 
 
+def row_files(out_dir):
+    """All row files under <out_dir>/rows: per-rep files rows/<scenario>/rep<NNNN>.csv
+    and older per-chunk files rows/<scenario>_reps<a>-<b>.csv."""
+    rows_dir = Path(out_dir) / "rows"
+    return sorted(rows_dir.glob("*.csv")) + sorted(rows_dir.glob("*/rep*.csv"))
+
+
+def completed(out_dir, config_ids):
+    """{(scenario, rep)} already written for *every* config in `config_ids`."""
+    seen = {}
+    for path in row_files(out_dir):
+        part = pd.read_csv(path, usecols=["scenario", "rep", "config_id"])
+        for (scen, rep), ids in part.groupby(["scenario", "rep"])["config_id"]:
+            seen.setdefault((scen, int(rep)), set()).update(ids)
+    return {key for key, ids in seen.items() if set(config_ids) <= ids}
+
+
+def _write_rep(out_dir, scenario_name, rep, rows):
+    """Atomically write one (scenario, rep) file: a crash never leaves a partial file."""
+    path = Path(out_dir) / "rows" / scenario_name / f"rep{rep:04d}.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    pd.DataFrame(rows).to_csv(tmp, index=False)
+    tmp.replace(path)
+    return path
+
+
+def _progress(done, total, skipped, start):
+    elapsed = time.time() - start
+    line = f"[{time.strftime('%H:%M:%S')}] {done}/{total} (scenario, rep) done"
+    if skipped:
+        line += f" (+{skipped} skipped, already complete)"
+    line += f"; elapsed {elapsed / 3600:.2f} h"
+    if 0 < done < total:
+        eta = start + elapsed / done * total
+        line += (f"; projected finish {time.strftime('%a %H:%M', time.localtime(eta))}"
+                 f" ({(eta - time.time()) / 3600:.1f} h left)")
+    print(line, flush=True)
+
+
 def run(config_path, reps, out_dir, scenario_names=None, config_ids=None, jobs=1):
-    """Run the selected configs on `reps` of each selected scenario of the config file;
-    write <out_dir>/rows/<scenario>_reps<first>-<last>.csv per scenario."""
-    from concurrent.futures import ProcessPoolExecutor
+    """Run the selected configs on `reps` of each selected scenario of the config file.
+
+    Each (scenario, rep) is written to <out_dir>/rows/<scenario>/rep<NNNN>.csv as soon
+    as it finishes. Resumable: (scenario, rep) pairs already present for all selected
+    configs (in any row file) are skipped. All pending pairs share one process pool;
+    a progress line with the projected finish time is printed after each one.
+    Returns the paths written.
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
 
     module = load_config(config_path)
     scenarios, configs = select(module, scenario_names, config_ids)
     config_ids = [c.config_id for c in configs]
     out_dir = Path(out_dir)
     (out_dir / "rows").mkdir(parents=True, exist_ok=True)
+
+    truths = {}
+    for scenario in scenarios:
+        truths[scenario.name] = true_ate(scenario, module.BASE_SEED, out_dir / "truth")
+        print(f"[{scenario.name}] true ATE {truths[scenario.name][0]:.4f} "
+              f"(MC SE {truths[scenario.name][1]:.4f})", flush=True)
+
+    done_before = completed(out_dir, config_ids)
+    # rep-major order: early reps of every scenario finish first
+    todo = [(s, rep) for rep in reps for s in scenarios if (s.name, rep) not in done_before]
+    skipped = len(scenarios) * len(reps) - len(todo)
+    print(f"{len(todo)} (scenario, rep) pairs to run, {skipped} already complete; "
+          f"{jobs} worker(s)", flush=True)
+
     written = []
-    pool = ProcessPoolExecutor(max_workers=jobs) if jobs > 1 else None
-    try:
-        for scenario in scenarios:
-            tau_true, mc_se = true_ate(scenario, module.BASE_SEED, out_dir / "truth")
-            print(f"[{scenario.name}] true ATE {tau_true:.4f} (MC SE {mc_se:.4f})",
-                  flush=True)
-            if pool:
-                futures = [pool.submit(_worker, str(config_path), scenario.name,
-                                       config_ids, rep, tau_true) for rep in reps]
-                results = (f.result() for f in futures)
-            else:
-                results = (run_rep(scenario, configs, rep, module.BASE_SEED, tau_true)
-                           for rep in reps)
-            args = reps
-            rows = []
-            for i, rep_rows in enumerate(results, 1):
-                rows.extend(rep_rows)
-                if i % 10 == 0 or i == len(args):
-                    print(f"[{scenario.name}] {i}/{len(args)} reps", flush=True)
-            path = out_dir / "rows" / f"{scenario.name}_reps{min(reps)}-{max(reps)}.csv"
-            pd.DataFrame(rows).to_csv(path, index=False)
-            written.append(path)
-    finally:
-        if pool:
-            pool.shutdown()
+    start = time.time()
+    if jobs > 1:
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
+            futures = {
+                pool.submit(_worker, str(config_path), s.name, config_ids, rep,
+                            truths[s.name][0]): (s.name, rep)
+                for s, rep in todo
+            }
+            for i, fut in enumerate(as_completed(futures), 1):
+                name, rep = futures[fut]
+                written.append(_write_rep(out_dir, name, rep, fut.result()))
+                _progress(i, len(todo), skipped, start)
+    else:
+        for i, (s, rep) in enumerate(todo, 1):
+            rows = run_rep(s, configs, rep, module.BASE_SEED, truths[s.name][0])
+            written.append(_write_rep(out_dir, s.name, rep, rows))
+            _progress(i, len(todo), skipped, start)
     return written

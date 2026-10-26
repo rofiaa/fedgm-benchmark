@@ -16,6 +16,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from experiments.harness import row_files  # noqa: E402
+
 Z95 = 1.959963984540054
 OPTIONAL = ("mw_rounds_max", "n_boot_reps", "mean_se_boot", "se_boot_ratio", "cov_boot_se",
             "cov_boot_pct", "cov_if_on_boot_reps", "width_boot_se", "width_boot_pct",
@@ -83,7 +86,7 @@ def summarize(rows):
 
 
 def load_rows(out_dir):
-    files = sorted(Path(out_dir, "rows").glob("*.csv"))
+    files = row_files(out_dir)
     if not files:
         raise FileNotFoundError(f"no row files in {out_dir}/rows")
     rows = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)

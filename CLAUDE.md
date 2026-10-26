@@ -155,8 +155,9 @@ notebook's code (they differ from App. D Table 2; F3).
   **New estimators (GenMatch) = new configs**; rows rely only on the frozen keys.
 - Seeds: `SeedSequence(BASE_SEED, spawn_key=(scenario, rep[, config]))`, so any rep slice
   reproduces the rows of a full run (tested).
-- `run.py <config> --reps 0-29 --jobs 7 --out results/<run>` → `<out>/rows/<scenario>_reps
-  <a>-<b>.csv`; SLURM: one array task per rep slice with `--jobs 1`. True ATEs are cached
+- `run.py <config> --reps 0-29 --jobs 7 --out results/<run>` → one file per (scenario, rep),
+  `<out>/rows/<scenario>/rep<NNNN>.csv`, written as each finishes; **resumable** (rerun
+  the same command: completed pairs are skipped); prints a projected finish time; SLURM: one array task per rep slice with `--jobs 1`. True ATEs are cached
   in `<out>/truth/`. `summarize.py <out>` → `<out>/summary.csv`.
 - Long local runs: `caffeinate -i` (a sleeping Mac stalls the pool).
 - `experiments/configs/ps_mc.py`: the six-scenario PS-aggregation MC.

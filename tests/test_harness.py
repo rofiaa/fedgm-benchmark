@@ -55,3 +55,30 @@ def test_flatten_keeps_scalars_and_splits_pairs():
     assert row["ci_if_lo"] == 0.0 and row["ci_if_hi"] == 2.0
     assert row["n_k_0"] == 3 and row["names"] == "a;b"
     assert "arr" not in row and row["undefined_reason"] is None
+
+
+def test_resume_skips_completed_reps(tmp_path, capsys):
+    first = run(CONFIG, [0, 1], tmp_path)
+    assert sorted(p.name for p in first) == ["rep0000.csv", "rep0001.csv"]
+    before = load_rows(tmp_path)
+    first[1].unlink()  # as if the run had died before rep 1 finished
+
+    again = run(CONFIG, [0, 1, 2], tmp_path)
+
+    assert sorted(p.name for p in again) == ["rep0001.csv", "rep0002.csv"]
+    out = capsys.readouterr().out
+    assert "2 (scenario, rep) pairs to run, 1 already complete" in out
+    assert "projected finish" in out
+    after = load_rows(tmp_path)
+    cols = ["rep", "config_id", "estimator", "tau", "se"]
+    key = ["rep", "config_id", "estimator"]
+    pd.testing.assert_frame_equal(
+        before[cols].sort_values(key).reset_index(drop=True),
+        after[after.rep < 2][cols].sort_values(key).reset_index(drop=True),
+    )
+
+
+def test_resume_reruns_reps_missing_a_config(tmp_path):
+    run(CONFIG, [0], tmp_path, config_ids=["meta_ht"])
+    # rep 0 lacks "fed" and "broken" -> not complete for the full config set
+    assert run(CONFIG, [0], tmp_path) != []

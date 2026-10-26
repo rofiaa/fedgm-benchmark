@@ -6,8 +6,10 @@
 --reps takes a range ("0-29"), a single rep ("5") or a list ("0-9,20-29"); each rep's
 seeds depend only on (BASE_SEED, scenario, rep, config), so SLURM array tasks can each
 run a slice, e.g. --reps $((SLURM_ARRAY_TASK_ID*10))-$((SLURM_ARRAY_TASK_ID*10+9))
---jobs 1. Rows go to <out>/rows/<scenario>_reps<a>-<b>.csv; combine and score them with
-experiments/summarize.py.
+--jobs 1. Each (scenario, rep) goes to <out>/rows/<scenario>/rep<NNNN>.csv when it
+finishes; rerunning the same command resumes, skipping completed (scenario, rep) pairs.
+A progress line with the projected finish time follows each pair. Combine and score the
+rows with experiments/summarize.py.
 """
 
 import os
