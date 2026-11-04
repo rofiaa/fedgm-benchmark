@@ -120,6 +120,15 @@ row interpolated between the two neighbouring gridlines: **DGP A 8.72** (left pa
 DGP B: ours 4.831, the figure 4.78, the notebook's hard-coded `tau_star=4.74` (cell 37):
 three different values for the same estimand.
 
+**Exact values (2026-11-04).** Both outcome versions have τ(x) = μ₁ − μ₀ with every
+polynomial coefficient differing by 1/3, so the true ATE follows from the Gaussian
+moments in closed form. Code outcome: **A 8.450, B 4.833** (our MC truths 8.456 and
+4.831 agree, an independent check of `true_ate`). App. D Table 2 formula: A 7.472
+(8.806 with the notebook's μ₃), **B 4.028**. Fig. 2's DGP B line (4.78) rules out the
+Table 2 formula, so the published figure was produced with the code's outcome; our
+setup (code outcome and γ, paper n_k, n and μ₃) is the closest available reproduction.
+The DGP A gap (8.72 vs 8.45) remains.
+
 **Ruled out.**
 - *Notebook μ₃ with the code's outcome*: 9.78, far from 8.72.
 - *Paper's Table 2 formula*: 7.47 with the paper's μ₃. With the notebook's μ₃ it gives
@@ -228,6 +237,34 @@ AIPW bias −0.03 ± 0.04 in DGP A (logistic MW: +0.77) and −0.03 ± 0.02 in D
 model object instead of probabilities; `fed_ps` always passes `rerun_NN=True`.
 
 ---
+
+## F7. The generator was not reproducible from its seed (our wrapper) — **fixed**
+
+**What.** Two sources, found when Narval and the Mac produced different data for the
+same `data_seed` (ps_mc reps 0–20: identical seeds, Fed-IPW-logistic τ̂ differing by up
+to 1.2; true ATEs differing within MC error).
+1. *DGP A and B, across machines.* The covariates are drawn with numpy's legacy
+   `multivariate_normal` (directly in DGP B, through `scipy.stats.multivariate_normal.rvs`
+   in DGP A), which colours standard normals with an SVD factor of Σ. Every Σ here has
+   a repeated eigenvalue (e.g. 1,…,1,6 for I + 0.5J), so the factor is unique only up to
+   a rotation within that eigenspace, and Apple Accelerate and OpenBLAS return different
+   ones. Same normals, different rotation, different X. On one machine, DGP A repeated
+   exactly.
+2. *DGP B, on any machine.* `generate_multivariate_mixtures_of_normals` picks mixture
+   components with Python's `random.choices`; `generate()` seeded only numpy's RNG.
+   Two calls with the same seed gave different data.
+
+**Effect.** Every dataset was a valid draw from the intended distribution, so the
+preliminary MC metrics (results/ps_mc, not committed) are statistically valid, but the
+datasets cannot be regenerated, so later estimators (GenMatch) could not be run on them.
+
+**Fix** (`src/dgps/authors.py`, `_seeded_generator`; the submodule is unchanged).
+`generate()` now seeds and restores both numpy's global RNG and `random`, and swaps in
+a Cholesky sampler (`_mvn_cholesky`) for the two multivariate-normal calls. The Cholesky
+factor is unique; any factor gives the same N(μ, Σ); the sampler consumes the same
+standard normals, so all later draws (W, noise) stay aligned. Datasets therefore differ
+from those drawn before the fix (same distribution). Tests: `tests/test_dgps.py`.
+Cross-machine agreement is checked on reps 0–1 of the rerun.
 
 ## Checks of flagged results
 

@@ -91,6 +91,9 @@ cannot take an external data frame. Therefore:
   - F5: with logistic MW, Fed-AIPW is biased in DGP A (both nuisances misspecified), as
     Fig. 2b shows, despite the text's "unbiased at all overlap levels".
   - F6: `train_NN`'s early stopping restores the last epoch (state_dict aliasing).
+  - F7: `generate()` was not reproducible (LAPACK-dependent SVD factor of Σ; DGP B's
+    unseeded `random.choices`). Fixed in our wrapper: Cholesky sampler + both RNGs
+    seeded. Results produced before the fix cannot be regenerated.
 - MW-NN in `fed_ps.estimate(mw="nn", seed=...)`: authors' `train_NN` unchanged (pooled
   data, `rerun_NN=True`), seeded via `torch.manual_seed` inside `torch.random.fork_rng`
   (int seeds pass through, for parity). ≈ 2–4 s per fit; the bootstrap retrains it in

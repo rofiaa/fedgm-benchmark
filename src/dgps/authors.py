@@ -14,7 +14,9 @@ disagree, the defaults follow the paper and the notebook value is a named varian
 `dgp_a_notebook_params()` / `dgp_b_notebook_params()` give the notebook's settings.
 """
 
+import random
 from contextlib import contextmanager
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -139,24 +141,56 @@ def dgp_b_params(overlap="poor", n=N_B_PAPER):
     return {name: {**shared, **spec} for name, spec in specific.items()}
 
 
+def _mvn_cholesky(mean, cov, size=None):
+    """N(mean, cov) draws from numpy's global RNG via the Cholesky factor.
+
+    Drop-in for the legacy np.random.multivariate_normal, which consumes the same
+    standard normals but colours them with an SVD factor. Every DGP covariance has a
+    repeated eigenvalue, so that factor is not unique and differs between LAPACK builds
+    (Accelerate vs OpenBLAS): same seed, different X (docs/findings.md, F7). The
+    Cholesky factor is unique, and any factor gives the same distribution.
+    """
+    mean = np.asarray(mean, dtype=float)
+    dim = mean.shape[0]
+    shape = (() if size is None else tuple(np.atleast_1d(size))) + (dim,)
+    z = np.random.standard_normal(shape)
+    return mean + z @ np.linalg.cholesky(np.asarray(cov, dtype=float)).T
+
+
+def _mvn_frame(covariates_name, sample_size, mean_vector=0, cov_matrix=1):
+    """Replacement for DGP_Fed.generate_multivariate_normal (DGP A's covariates)."""
+    return pd.DataFrame(_mvn_cholesky(mean_vector, cov_matrix, sample_size),
+                        columns=covariates_name)
+
+
 @contextmanager
-def _numpy_global_seed(seed):
-    """The authors' generator draws from numpy's global RNG; seed it, then restore."""
-    state = np.random.get_state()
+def _seeded_generator(seed):
+    """Seed every RNG the authors' generator uses, then restore them.
+
+    numpy's global RNG draws everything except DGP B's mixture components, which come
+    from Python's `random`. The multivariate normals are drawn with _mvn_cholesky.
+    """
+    A = dgp_fed()
+    np_state, py_state = np.random.get_state(), random.getstate()
     np.random.seed(seed)
+    random.seed(seed)
     try:
-        yield
+        with mock.patch.object(A, "generate_multivariate_normal", _mvn_frame), \
+                mock.patch.object(np.random, "multivariate_normal", _mvn_cholesky):
+            yield
     finally:
-        np.random.set_state(state)
+        np.random.set_state(np_state)
+        random.setstate(py_state)
 
 
 def generate(params, dgp, seed):
     """One dataset from the authors' generator: (authors' frame, our frame).
 
     dgp: "A" (sites sampled separately) or "B" (sites assigned given X).
+    The same seed gives the same data on any machine (see _seeded_generator).
     """
     sim = dgp_fed().Simulations_Fed(params, n_simulations=1)
-    with _numpy_global_seed(seed):
+    with _seeded_generator(seed):
         df_auth = sim.combine_data() if dgp == "A" else sim.make_data_by_H_given_X()
     return df_auth, to_our_frame(df_auth)
 
