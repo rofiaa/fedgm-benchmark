@@ -206,3 +206,44 @@ def test_aipw_local_rf_matches_authors(dgp_a_poor):
     ours = estimate(df, local_ps="rf", aipw=True, mw_intercept=False, seed=22)
 
     np.testing.assert_allclose(ours["tau"], results["GD-MW_logistic"][0], rtol=1e-10)
+
+
+def test_ipw_dw_param_matches_authors(dgp_a_poor):
+    params, df_auth, df = dgp_a_poor
+    Sim = dgp_fed().Simulations_Fed
+    with mock.patch.object(Sim, "combine_data", lambda self, dict_data=None: df_auth.copy()):
+        results, df_theirs, _ = Sim(params, n_simulations=1).estimate_ipw(
+            ht_or_hajek="HT",
+            propensity_estimation="logistic",
+            propensity_federations=["dwparam", "local"],
+            final_estimators=["DW-param"],
+            generate_by_center=True,
+            print_overlap=False,
+            scale=False,
+        )
+    ours = estimate(df, mw="dw_param")
+    np.testing.assert_allclose(ours["e_hat"].to_numpy(),
+                               df_theirs["hat_e_dwparam"].to_numpy(), rtol=1e-9)
+    np.testing.assert_allclose(ours["tau"], results["DW-param"][0], rtol=1e-9)
+    assert ours["mw_fit"] == "gaussian-site-moments"
+
+
+def test_aipw_dw_param_matches_authors(dgp_a_poor):
+    params, df_auth, df = dgp_a_poor
+    Sim = dgp_fed().Simulations_Fed
+    with mock.patch.object(Sim, "combine_data", lambda self, dict_data=None: df_auth.copy()):
+        results, df_theirs = Sim(params, n_simulations=1).estimate_aipw(
+            propensity_federations=["dwparam", "local"],
+            outcome_estimators=["GD"],
+            final_estimators=["GD-DWparam"],
+            propensity_estimation="logistic",
+            generate_by_center=True,
+            params_for_federation=None,
+            params_for_federation_omega=None,
+            scale=False,
+            print_overlap=False,
+        )
+    ours = estimate(df, aipw=True, mw="dw_param")
+    np.testing.assert_allclose(ours["e_hat"].to_numpy(),
+                               df_theirs["hat_e_dwparam"].to_numpy(), rtol=1e-9)
+    np.testing.assert_allclose(ours["tau"], results["GD-DWparam"][0], rtol=1e-9)

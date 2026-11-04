@@ -21,7 +21,7 @@ from src.estimators._authors import dgp_fed
 from src.estimators.balance import smd
 
 _IMPLEMENTED = {
-    "mw": {"logistic", "logistic_fedavg", "nn"},
+    "mw": {"logistic", "logistic_fedavg", "nn", "dw_param"},
     "local_ps": {"logistic", "rf"},
     "ipw_type": {"HT", "Hajek", "Hajek_pooled"},
     "aipw": {False, True},
@@ -49,7 +49,7 @@ BOOTSTRAP_B = 200
 _Z95 = 1.959963984540054
 
 _MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg",
-           "nn": "nn-pooled"}
+           "nn": "nn-pooled", "dw_param": "gaussian-site-moments"}
 _OUTCOME_FIT = {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}
 
 
@@ -77,7 +77,10 @@ def estimate(
         FedAvg multinomial logistic with full-batch local steps (authors' algorithm and
         gradient, plus a stopping rule; see FEDAVG_MW_DEFAULTS); "nn" = authors'
         train_NN (one hidden layer of 64 units, Adam, early stopping on the training
-        loss, X standardized), trained on the **pooled** data, not by FedAvg.
+        loss, X standardized), trained on the **pooled** data, not by FedAvg;
+        "dw_param" = the authors' density-ratio weights "DW-param": ω̂_k(x) ∝
+        (n_k/n) N(x; μ̂_k, Σ̂_k) with each site's sample mean and (1/n_k) covariance of
+        X (federated by sharing n_k, μ̂_k, Σ̂_k; well specified in DGP A only).
     local_ps: local propensity model e_k(x), fitted at site k on X + intercept.
         "logistic" = authors' compute_gamma; "rf" = the authors' inline sklearn forest
         (RandomForestClassifier(n_estimators=2000, min_samples_leaf=int(sqrt(n_k)),
@@ -243,6 +246,8 @@ def _fit_nuisances(A, data, x_cols, K, mw, mw_intercept, fedavg, local_ps, mw_se
         )
     elif mw == "nn":
         omega = _nn_membership(A, data, x_cols, K, mw_seed)
+    elif mw == "dw_param":
+        omega = _dw_param_membership(data, x_cols, K)
     else:
         omega, mw_rounds, mw_converged = _fedavg_membership(
             A, data, mw_cols, K, fedavg["T_rounds"], fedavg["eta"],
@@ -537,6 +542,23 @@ def _nn_membership(A, data, x_cols, K, torch_seed):
         torch.manual_seed(torch_seed)
         proba = A.Simulations_Fed.train_NN(stub, data, rerun_NN=True)
     return _site_order_numeric(np.asarray(proba), K)
+
+
+def _dw_param_membership(data, x_cols, K):
+    """Authors' "dwparam" membership weights (estimate_ipw), in log space: the same
+    numbers up to rounding, without underflow far from every site's mean."""
+    from scipy.stats import multivariate_normal
+
+    X = data[x_cols].to_numpy()
+    log_w = np.empty((len(X), K))
+    for k in range(K):
+        X_k = X[(data["client"] == _label(k)).to_numpy()]
+        mu = X_k.mean(axis=0)
+        sigma = (X_k - mu).T @ (X_k - mu) / len(X_k)
+        log_w[:, k] = multivariate_normal.logpdf(X, mean=mu, cov=sigma) + np.log(len(X_k))
+    log_w -= log_w.max(axis=1, keepdims=True)
+    w = np.exp(log_w)
+    return w / w.sum(axis=1, keepdims=True)
 
 
 def _ipw_terms_ht(W, Y, e):
