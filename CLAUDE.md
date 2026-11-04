@@ -102,6 +102,12 @@ cannot take an external data frame. Therefore:
   (2000 trees, max_depth=2, min_samples_leaf=√n_k, `use_grf=False`), one
   `np.random.RandomState(seed)` shared by the site forests in site order (= their
   unseeded forests after `np.random.seed(seed)`). ≈ 5.5 s per estimate (3 sites).
+- Oracle in `src/estimators/oracle.py` (`estimate_multi(df)`): the authors' "Oracle",
+  IPW with the true e* = Σ ω*_k e*_k and AIPW with the true Y1*/Y0*. It reads
+  `df.attrs["oracle"]`, which `generate()` attaches (`oracle_frame`); no other estimator
+  reads it. Parity with the authors' Oracle (A: IPW + AIPW, B: IPW).
+- `experiments/checks/membership_error.py`: |ω̂ − ω*| per scenario for logistic vs NN MW
+  (`results/checks/membership_error.csv`): logistic ≈ 0.24 in DGP A vs 0.016 in B.
 - Fed-DW in `fed_ps.estimate(mw="dw_param")`: the authors' "DW-param" (ω̂_k ∝ n_k
   N(x; μ̂_k, Σ̂_k), site sample moments; computed in log space). Parity with their IPW
   "DW-param" and AIPW "GD-DWparam".

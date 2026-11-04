@@ -20,6 +20,7 @@ from unittest import mock
 
 import numpy as np
 import pandas as pd
+from scipy.stats import multivariate_normal
 
 from src.estimators._authors import dgp_fed
 
@@ -183,16 +184,58 @@ def _seeded_generator(seed):
         random.setstate(py_state)
 
 
-def generate(params, dgp, seed):
+def generate(params, dgp, seed, oracle=True):
     """One dataset from the authors' generator: (authors' frame, our frame).
 
     dgp: "A" (sites sampled separately) or "B" (sites assigned given X).
     The same seed gives the same data on any machine (see _seeded_generator).
+    oracle: attach oracle_frame(...) to our frame as df.attrs["oracle"] (for the
+    Oracle estimator and checks only; estimators never read it).
     """
     sim = dgp_fed().Simulations_Fed(params, n_simulations=1)
     with _seeded_generator(seed):
         df_auth = sim.combine_data() if dgp == "A" else sim.make_data_by_H_given_X()
-    return df_auth, to_our_frame(df_auth)
+    df = to_our_frame(df_auth)
+    if oracle:
+        df.attrs["oracle"] = oracle_frame(params, dgp, df_auth)
+    return df_auth, df
+
+
+def oracle_frame(params, dgp, df_auth):
+    """True nuisances per row, as the authors' "Oracle" (estimate_ipw/estimate_aipw):
+    omega_star_k = P(H=k | x), e_star_k = site k's true propensity at x (0 for a
+    controls-only site), e_star = Σ_k omega_star_k e_star_k, and the potential
+    outcomes Y1*, Y0* (with noise). Index 0..n-1, aligned with to_our_frame."""
+    A = dgp_fed()
+    sites = sorted((n for n in params if n.startswith("client")),
+                   key=lambda n: int(n.removeprefix("client")))
+    df_auth = df_auth.reset_index(drop=True)
+    X = df_auth[X_COLS].to_numpy()
+    if dgp == "A":
+        log_w = np.column_stack([
+            multivariate_normal.logpdf(X, mean=params[s]["mean_covariates"],
+                                       cov=params[s]["cov_covariates"])
+            + np.log((df_auth["client"] == s).mean())
+            for s in sites])
+        omega = np.exp(log_w - log_w.max(axis=1, keepdims=True))
+        omega /= omega.sum(axis=1, keepdims=True)
+    else:  # DGP_Fed.multi_logistic's probabilities; it also draws labels from the
+        # global RNG even with return_prob=True, so it is not called here
+        scores = np.c_[np.ones(len(X)), X] @ np.asarray(
+            params["global_population"]["membership_Thetas"]).T
+        omega = np.exp(scores - scores.max(axis=1, keepdims=True))
+        omega /= omega.sum(axis=1, keepdims=True)
+    e_k = np.column_stack([
+        np.zeros(len(X)) if params[s]["W_model"] == "0"
+        else A.logistic_function_vectorized(df_auth, params[s]["treatment_cols"],
+                                            params[s]["gamma"])
+        for s in sites])
+    out = pd.DataFrame({f"omega_star_{k}": omega[:, k] for k in range(len(sites))})
+    for k in range(len(sites)):
+        out[f"e_star_{k}"] = e_k[:, k]
+    out["e_star"] = np.sum(omega * e_k, axis=1)
+    out["Y1*"], out["Y0*"] = df_auth["Y1*"].to_numpy(), df_auth["Y0*"].to_numpy()
+    return out
 
 
 def to_our_frame(df_auth):
@@ -217,6 +260,6 @@ def true_ate(params, dgp, n_total, seed):
             params[name]["sample_size"] = n_total // len(sites)
     else:
         params["global_population"]["sample_size"] = n_total
-    df_auth, _ = generate(params, dgp, seed)
+    df_auth, _ = generate(params, dgp, seed, oracle=False)
     ite = df_auth["ITE*"].to_numpy()
     return float(ite.mean()), float(ite.std(ddof=1) / np.sqrt(len(ite)))
