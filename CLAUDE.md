@@ -181,6 +181,10 @@ notebook's code (they differ from App. D Table 2; F3).
   the same command: completed pairs are skipped); prints a projected finish time; SLURM: one array task per rep slice with `--jobs 1`. True ATEs are cached
   in `<out>/truth/`. `summarize.py <out>` → `<out>/summary.csv`.
 - Long local runs: `caffeinate -i` (a sleeping Mac stalls the pool).
+- Narval: `experiments/slurm/array.sh CONFIG OUT REP_OFFSET SCENARIO...` runs one
+  (scenario, rep) per array task (task i → scenario i % S, rep OFFSET + i / S).
+  GenMatch runs only on Narval (rgenoud's search need not be bit-identical across
+  machines).
 - `experiments/configs/ps_mc.py`: the six-scenario PS-aggregation MC.
   `experiments/mini_mc.py` is superseded (kept for its committed results).
 
