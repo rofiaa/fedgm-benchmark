@@ -65,12 +65,16 @@ def multi(config_id, estimate_multi, estimands, bootstrap=0, bootstrap_reps=None
           bootstrap_for=None, **kwargs):
     """Config around `estimate_multi(df, estimands, seed=..., **kwargs)`: one shared
     fit, one row per estimand. bootstrap: B for the estimands in `bootstrap_for`, only
-    for reps in `bootstrap_reps` (None = all reps)."""
+    for reps in `bootstrap_reps` (None = all reps); with bootstrap=0 no bootstrap
+    arguments are passed."""
 
     def run(df, seed, rep):
-        boot = bootstrap if bootstrap_reps is None or rep in bootstrap_reps else 0
-        return estimate_multi(df, estimands, seed=seed, bootstrap=boot,
-                              bootstrap_for=bootstrap_for, **kwargs)
+        kw = dict(kwargs)
+        if bootstrap:  # estimators without a bootstrap need not accept these
+            kw["bootstrap"] = bootstrap if bootstrap_reps is None or rep in bootstrap_reps \
+                else 0
+            kw["bootstrap_for"] = bootstrap_for
+        return estimate_multi(df, estimands, seed=seed, **kw)
 
     return Config(config_id, run, list(estimands), dict(kwargs))
 

@@ -59,7 +59,8 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
 
     Returns the frozen keys plus ci_ai (normal 95% CI), estimand, covariates, smd,
     unit_weights (each unit's total pair weight in the matched sample), n_eff (Kish effective sample size of the matched weights), n_pairs, gm_fitness
-    (GenMatch's lexical fitness vector; [0] is the smallest balance p-value),
+    (GenMatch's lexical fitness vector), gm_min_pvalue (its first entry: the smallest
+    balance p-value after matching),
     gm_weights (learned diagonal weights, per matching covariate), gm_seeds,
     gm_settings, runtime_shared_by. runtime covers the whole call.
     """
@@ -156,6 +157,7 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
             n_eff=float(unit_w.sum() ** 2 / np.sum(unit_w**2)),
             n_pairs=int(len(np.asarray(m.rx2("index.treated")))),
             gm_fitness=gm_fitness if name.startswith("GM") else None,
+            gm_min_pvalue=gm_fitness[0] if name.startswith("GM") else None,
             gm_weights=gm_weights if name.startswith("GM") else None,
             gm_seeds=(unif_seed, int_seed) if name.startswith("GM") else None,
             gm_settings=settings if name.startswith("GM") else None,

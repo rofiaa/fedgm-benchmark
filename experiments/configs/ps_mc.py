@@ -1,6 +1,7 @@
 """Propensity-score-aggregation Monte Carlo: Fig. 2's six scenarios
 (DGP A / DGP B × no / poor / good local overlap; paper's App. D values, see
-src/dgps/authors.py), federated and Meta-SW estimators.
+src/dgps/authors.py): the Oracle, federated (MW logistic / FedAvg / NN, DW) and Meta-SW
+estimators of Fig. 2, plus the centralized pooled-PS baseline.
 
 Inference: IF SE on every rep; site-stratified bootstrap (B = 200) on reps 0-29 for the
 IPW-type estimators only (AIPW uses the IF SE as its primary SE). FedAvg-MW configs are
@@ -15,7 +16,7 @@ from functools import partial
 
 from experiments.harness import Scenario, multi
 from src.dgps.authors import OVERLAPS, dgp_a_params, dgp_b_params, generate, true_ate
-from src.estimators import fed_ps, meta_sw
+from src.estimators import fed_ps, meta_sw, oracle, pooled_ps
 
 BASE_SEED = 20261025
 BOOT_B = fed_ps.BOOTSTRAP_B
@@ -44,9 +45,13 @@ CONFIGS = [
           bootstrap_for=FED_IPW, **boot),
     multi("fed_fedavg", fed_ps.estimate_multi, FED, mw="logistic_fedavg"),
     multi("fed_nn", fed_ps.estimate_multi, FED, mw="nn", bootstrap_for=FED_IPW, **boot),
+    multi("fed_dw", fed_ps.estimate_multi, FED, mw="dw_param", bootstrap_for=FED_IPW,
+          **boot),
     multi("fed_logistic_rfps", fed_ps.estimate_multi, FED, mw="logistic", local_ps="rf",
           bootstrap_for=FED_IPW, **boot),
     multi("meta_logistic", meta_sw.estimate_multi, META, bootstrap_for=META_IPW, **boot),
     multi("meta_rfps", meta_sw.estimate_multi, META, local_ps="rf",
           bootstrap_for=META_IPW, **boot),
+    multi("pooled_logistic", pooled_ps.estimate_multi, FED, bootstrap_for=FED_IPW, **boot),
+    multi("oracle", oracle.estimate_multi, FED),
 ]

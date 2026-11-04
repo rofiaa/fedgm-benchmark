@@ -20,9 +20,10 @@ from src.estimators.fed_ps import _Z95, _aipw_terms, _if_se, _ipw_terms_hajek, _
 ESTIMANDS = ("IPW-HT", "IPW-Hajek_pooled", "AIPW")
 
 
-def estimate_multi(df, estimands=ESTIMANDS):
+def estimate_multi(df, estimands=ESTIMANDS, seed=None):
     """{estimand: result} with the frozen keys plus ci_if, estimand, e_hat.
 
+    seed: unused (the Oracle is deterministic); accepted for the harness.
     se is the IF SE with the (true) nuisances fixed; max_smd uses the e*-IPW weights.
     """
     estimands = list(dict.fromkeys(estimands))
