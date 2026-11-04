@@ -108,6 +108,15 @@ cannot take an external data frame. Therefore:
   reads it. Parity with the authors' Oracle (A: IPW + AIPW, B: IPW).
 - `experiments/checks/membership_error.py`: |ω̂ − ω*| per scenario for logistic vs NN MW
   (`results/checks/membership_error.csv`): logistic ≈ 0.24 in DGP A vs 0.016 in B.
+- Centralized pooled PS in `src/estimators/pooled_ps.py`: one logistic ê(x) on the pooled
+  data (authors' `compute_gamma`), same IPW/AIPW and outcome models as fed_ps.
+  `pooled_ps_logit(df)` is also GenMatch's PS covariate, so GM(X+ps) and pooled IPW
+  differ only in matching vs weighting.
+- GenMatch in `src/estimators/genmatch.py` (`estimate_multi(df, estimands, covariates,
+  seed, cores, genmatch_params)`): settings of rofiaa/genmatch-lalonde (D&S) with
+  `estimand="ATE"` in both GenMatch and Match; balance matrix X, X², X_iX_j; estimands
+  GM, GM-BA (Abadie–Imbens bias adjustment on X), Maha, Maha-BA; AI SE from Match.
+  Site H is not used. Cost at pop.size=1000: ≈ 3 min per generation on a DGP A dataset.
 - Fed-DW in `fed_ps.estimate(mw="dw_param")`: the authors' "DW-param" (ω̂_k ∝ n_k
   N(x; μ̂_k, Σ̂_k), site sample moments; computed in log space). Parity with their IPW
   "DW-param" and AIPW "GD-DWparam".
