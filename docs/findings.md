@@ -287,6 +287,34 @@ bias is −0.10 ± 0.05, within 2 MC SE of zero. The median (−0.20) sits below
 NN membership weights push the smallest global ê to ≈ 2e−3 (ten times smaller than
 with logistic MW), which gives IPW-HT a right tail. Recheck in the six-scenario MC.
 
+### N2. GenMatch pilot: every matching estimate is biased downward — matching discrepancy, not a bug
+
+**Flag.** GenMatch pilot (`experiments/configs/gm_mc.py`, reps 0–1, all six scenarios,
+`results/gm_mc`): GM, GM-BA, Maha and Maha-BA all underestimate the ATE in all 12
+datasets, by −0.17 to −0.84, including good overlap, where the PS estimators are
+unbiased. AI-SE coverage mostly fails.
+
+**Check.** `experiments/checks/matching_bias.py` → `results/checks/matching_bias.csv`:
+Mahalanobis matching with the same covariates and Match settings, compared with the
+sample ATE mean(Y1* − Y0*):
+
+| | Error vs sample ATE (12 datasets) |
+|---|---|
+| Maha (no adjustment) | −0.34 to −0.88 |
+| Maha-BA, Z = X (linear; our GM-BA / Maha-BA) | −0.26 to −0.68 |
+| Maha-BA, Z = X, X², X_iX_j | −0.10 to +0.10 |
+
+Rebuilding the estimate from `index.treated`/`index.control`/`weights` reproduces
+Match's number exactly.
+
+**Conclusion.** The matches are correct: once the bias adjustment can represent the
+quadratic outcome, the bias disappears. The bias is 1:1 matching's discrepancy in
+11 continuous dimensions times the outcome's curvature (Abadie & Imbens 2006), and it
+does not shrink much at n = 2000–4000. Linear bias adjustment removes only part of it.
+A quadratic Z gives matching a correctly specified outcome model, while our AIPW
+outcome models are linear in X. A fair comparison needs the same outcome-model class
+on both sides (open decision).
+
 ---
 
 ## Compatibility notes (no effect on results)
