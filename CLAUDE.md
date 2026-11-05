@@ -185,6 +185,15 @@ notebook's code (they differ from App. D Table 2; F3).
   (scenario, rep) per array task (task i → scenario i % S, rep OFFSET + i / S).
   GenMatch runs only on Narval (rgenoud's search need not be bit-identical across
   machines).
+- IHDP (`src/dgps/ihdp.py`, data via `setup/download_ihdp.sh` into untracked `data/`):
+  100 replications (Shalit et al.), same 747 units / design in every replication (rows put
+  in a canonical order), sites H = the 8 IHDP sites (x19..x25 dummies), truth = sample ATE
+  per replication in `df.attrs["tau_true"]`. Harness: `Scenario(by_rep=True)` calls
+  `generate(rep)`; a frame's `attrs["tau_true"]` overrides the scenario truth, and
+  `summarize` scores against each row's truth. `experiments/configs/ihdp_mc.py`: fed / Meta-SW
+  on X1..X18 + H, pooled PS and GenMatch on X1..X25 (site dummies); GenMatch balance
+  matrix = 25 covariates + squares/products of X1..X6 (`balance_quad`). Fed-DW is not
+  applicable (singular site covariances). GenMatch ≈ 23 min per replication on one core.
 - `experiments/configs/ps_mc.py`: the six-scenario PS-aggregation MC.
   `experiments/mini_mc.py` is superseded (kept for its committed results).
 

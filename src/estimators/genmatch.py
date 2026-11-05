@@ -7,7 +7,9 @@ R/04_matching.R), which follows D&S, except that the estimand is the ATE:
     score when covariates="X+ps" (pooled_ps.pooled_ps_logit: the same ê that
     pooled_ps weights with, so GM and pooled IPW differ only in matching vs weighting);
   - balance matrix (GenMatch's fitness): X, X², and all pairwise products X_i X_j
-    (the propensity score is not included, as in genmatch-lalonde);
+    (the propensity score is not included, as in genmatch-lalonde); balance_quad
+    restricts the squares and products to some covariates (genmatch-lalonde's IHDP
+    run: the 6 continuous ones);
   - fit.func="pvals" (lexical: smallest paired-t / KS p-value first), ks=TRUE,
     nboots=0, pop.size=1000, max.generations=100 (soft limit), wait.generations=10;
   - Match: M=1, with replacement, weighted ties, no caliper, Weight.matrix from
@@ -47,7 +49,7 @@ def estimate(df, estimand="GM", **cfg):
 
 
 def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=1,
-                   genmatch_params=None):
+                   genmatch_params=None, balance_quad=None):
     """{estimand: result}; one GenMatch search shared by "GM" and "GM-BA".
 
     df: columns X1..Xd, W (0/1), Y (H, if present, is ignored).
@@ -56,6 +58,8 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
         (None -> fresh entropy, returned as gm_seeds).
     cores: >1 runs the GenMatch search on a local R parallel cluster.
     genmatch_params: overrides of GENMATCH_DEFAULTS.
+    balance_quad: covariate names whose squares and pairwise products enter the
+        balance matrix (None = all of X1..Xd); every covariate enters linearly.
 
     Returns the frozen keys plus ci_ai (normal 95% CI), estimand, covariates, smd,
     unit_weights (each unit's total pair weight in the matched sample), n_eff (Kish effective sample size of the matched weights), n_pairs, gm_fitness
@@ -92,6 +96,7 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
     if covariates == "X+ps":
         X_match = np.column_stack([X, pooled_ps_logit(df)])
         match_cols.append("ps_logit")
+    quad = None if balance_quad is None else [x_cols.index(c) for c in balance_quad]
     Z = X  # bias-adjustment regressors: the covariates (Match's default Z = X)
 
     r = dict(Tr=ro.FloatVector(W), X=_r_matrix(ro, X_match), estimand="ATE",
@@ -106,7 +111,7 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
             cluster = ro.r("parallel::makeCluster")(cores)
         try:
             gen = matching.GenMatch(
-                BalanceMatrix=_r_matrix(ro, _balance_matrix(X)),
+                BalanceMatrix=_r_matrix(ro, _balance_matrix(X, quad)),
                 pop_size=gm["pop_size"], max_generations=gm["max_generations"],
                 wait_generations=gm["wait_generations"],
                 hard_generation_limit=gm["hard_generation_limit"],
@@ -135,7 +140,9 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
     if gen is not None:
         gm_fitness = list(np.asarray(gen.rx2("value"), dtype=float))
         gm_weights = dict(zip(match_cols, np.diag(np.asarray(gen.rx2("Weight.matrix")))))
-    settings = dict(covariates=covariates, balance_matrix="X, X^2, X_i*X_j",
+    quad_desc = "all" if balance_quad is None else "+".join(balance_quad)
+    settings = dict(covariates=covariates,
+                    balance_matrix=f"X; squares and products of {quad_desc}",
                     fit_func="pvals", ks=True, M=1, replace=True, ties=True, **gm)
     for name, m in fits.items():
         tau = float(m.rx2("est")[0])
@@ -172,10 +179,12 @@ def _r_matrix(ro, A):
     return ro.r.matrix(ro.FloatVector(A.ravel(order="F")), nrow=A.shape[0])
 
 
-def _balance_matrix(X):
-    """X, its squares, and all pairwise products (genmatch-lalonde's balance targets)."""
-    d = X.shape[1]
-    cols = [X, X**2] + [X[:, [i]] * X[:, [j]] for i in range(d) for j in range(i + 1, d)]
+def _balance_matrix(X, quad=None):
+    """X, plus the squares and pairwise products of the columns `quad` (default: all)
+    (genmatch-lalonde's balance targets)."""
+    C = X if quad is None else X[:, quad]
+    d = C.shape[1]
+    cols = [X, C**2] + [C[:, [i]] * C[:, [j]] for i in range(d) for j in range(i + 1, d)]
     return np.column_stack(cols)
 
 

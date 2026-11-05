@@ -68,3 +68,13 @@ def test_balance_matrix_terms():
     B = _balance_matrix(X)
     assert B.shape == (2, 3 + 3 + 3)
     np.testing.assert_array_equal(B[:, 6], X[:, 0] * X[:, 1])
+
+
+def test_balance_matrix_restricted_quadratic_terms():
+    X = np.arange(20.0).reshape(5, 4)
+    B = _balance_matrix(X, quad=[0, 2])
+    # 4 linear + 2 squares + 1 product
+    assert B.shape == (5, 7)
+    np.testing.assert_array_equal(B[:, :4], X)
+    np.testing.assert_array_equal(B[:, 4], X[:, 0] ** 2)
+    np.testing.assert_array_equal(B[:, 6], X[:, 0] * X[:, 2])

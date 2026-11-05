@@ -31,11 +31,17 @@ from src.estimators.common import REQUIRED_KEYS, check_result
 
 @dataclass
 class Scenario:
-    """generate(seed) -> data frame; truth(n, seed) -> (tau, Monte Carlo SE)."""
+    """generate(seed) -> data frame; truth(n, seed) -> (tau, Monte Carlo SE).
+
+    by_rep=True: a fixed set of replications (semi-synthetic data such as IHDP):
+    generate(rep) is called with the rep number instead of a seed. A frame may carry
+    its own truth in df.attrs["tau_true"], which then replaces the scenario's truth
+    in that rep's rows."""
     name: str
     generate: Callable
     truth: Callable
     truth_n: int = 1_000_000
+    by_rep: bool = False
 
 
 @dataclass
@@ -135,7 +141,8 @@ def true_ate(scenario, base_seed, cache_dir):
 def run_rep(scenario, configs, rep, base_seed, tau_true):
     """All configs on one dataset; returns a list of row dicts."""
     seed = data_seed(base_seed, scenario.name, rep)
-    df = scenario.generate(seed)
+    df = scenario.generate(rep if scenario.by_rep else seed)
+    tau_true = df.attrs.get("tau_true", tau_true)
     rows = []
     for config in configs:
         c_seed = config_seed(base_seed, scenario.name, rep, config.config_id)

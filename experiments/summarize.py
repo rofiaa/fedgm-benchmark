@@ -30,13 +30,16 @@ def _covers(lo, hi, truth):
 
 
 def score(g):
-    truth = g["tau_true"].iloc[0]
+    """Errors and coverage use each row's tau_true (constant within a simulated
+    scenario; per replication for fixed-replication data such as IHDP, where the
+    reported tau_true is the mean)."""
     ok = g[np.isfinite(g["tau"])]
-    err = ok["tau"] - truth
-    sd = ok["tau"].std(ddof=1)
+    err = ok["tau"] - ok["tau_true"]
+    sd = err.std(ddof=1)  # = SD of tau-hat when the truth is constant
     has_se = ok[np.isfinite(ok["se"])]
+    truth = has_se["tau_true"]
     out = {
-        "tau_true": truth,
+        "tau_true": g["tau_true"].mean(),
         "n_reps": len(g),
         "n_errors": int(g["error"].astype("string").fillna("").ne("").sum()),
         "n_undefined": int((~np.isfinite(g["tau"])).sum()),
@@ -65,11 +68,11 @@ def score(g):
             "mean_se_boot": b["se_boot"].mean(),
             "se_boot_ratio": b["se_boot"].mean() / sd,
             "cov_boot_se": _covers(b["tau"] - Z95 * b["se_boot"],
-                                   b["tau"] + Z95 * b["se_boot"], truth),
+                                   b["tau"] + Z95 * b["se_boot"], b["tau_true"]),
             "cov_boot_pct": _covers(b["ci_boot_percentile_lo"],
-                                    b["ci_boot_percentile_hi"], truth),
+                                    b["ci_boot_percentile_hi"], b["tau_true"]),
             "cov_if_on_boot_reps": _covers(b["tau"] - Z95 * b["se"],
-                                           b["tau"] + Z95 * b["se"], truth),
+                                           b["tau"] + Z95 * b["se"], b["tau_true"]),
             "width_boot_se": (2 * Z95 * b["se_boot"]).mean(),
             "width_boot_pct": (b["ci_boot_percentile_hi"]
                                - b["ci_boot_percentile_lo"]).mean(),
