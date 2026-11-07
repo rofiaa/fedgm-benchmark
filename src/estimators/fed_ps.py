@@ -53,7 +53,13 @@ _MW_FIT = {"logistic": "pooled-centralized", "logistic_fedavg": "fedavg",
 _OUTCOME_FIT = {"ols": "pooled-ols", "fedavg": "fedavg-sgd-clipped"}
 
 
-ESTIMANDS = ("IPW-HT", "IPW-Hajek_pooled", "IPW-Hajek", "AIPW")
+ESTIMANDS = ("IPW-HT", "IPW-Hajek_pooled", "IPW-Hajek", "AIPW",
+             "ATT-IPW-HT", "ATT-IPW-Hajek_pooled", "ATT-AIPW")
+# ATT estimators (our extension; the paper targets the ATE only): treated units weigh 1,
+# controls the odds r = ê/(1-ê) of the global ê, sums over all sites (federated as
+# per-site sums). "ATT-IPW-HT" divides by n1; "ATT-IPW-Hajek_pooled" normalizes the
+# control weights; "ATT-AIPW" is the normalized form on Y - μ̂_0(x) (doubly robust,
+# needs only the control outcome model). See _att_terms.
 
 
 def estimate(
@@ -146,7 +152,9 @@ def estimate_multi(
 ):
     """Several federated estimators from **one** fit of the nuisances.
 
-    estimands: names from ESTIMANDS ("IPW-HT", "IPW-Hajek_pooled", "IPW-Hajek", "AIPW").
+    estimands: names from ESTIMANDS ("IPW-HT", "IPW-Hajek_pooled", "IPW-Hajek", "AIPW",
+        and the ATT versions "ATT-IPW-HT", "ATT-IPW-Hajek_pooled", "ATT-AIPW"). smd /
+        max_smd use each estimand's own weights (ATE or ATT).
     bootstrap_for: the estimands that get the site-stratified bootstrap (default: all
         of them when bootstrap > 0). Each bootstrap replicate refits the nuisances once
         and evaluates every estimand in bootstrap_for on them.
@@ -171,7 +179,7 @@ def estimate_multi(
         raise ValueError("bootstrap_for must be a subset of estimands")
     if not bootstrap:
         bootstrap_for = []
-    aipw = "AIPW" in estimands
+    aipw = _needs_outcome(estimands)
     cfg = dict(mw=mw, mw_intercept=mw_intercept, fedavg=fedavg, local_ps=local_ps,
                mw_seed=_int_seed(seed, 63) if mw == "nn" else None,
                ps_seed=_int_seed(seed, 32) if local_ps == "rf" else None,
@@ -184,16 +192,13 @@ def estimate_multi(
     fits = _estimands(A, data, x_cols, K, nuis, estimands)
     e_hat = nuis["e_hat"]
 
-    weights = np.where(data["W"] == 1, 1 / e_hat, 1 / (1 - e_hat))
-    balance = smd(data[x_cols], data["W"], weights)
+    balance = _balance(data, x_cols, e_hat, estimands)
     index = df.index
     shared = dict(
         e_hat=pd.Series(e_hat, index=index, name="e_hat"),
         e_local=pd.DataFrame(nuis["e_local"], index=index, columns=range(K)),
         omega_hat=pd.DataFrame(nuis["omega"], index=index, columns=range(K)),
         n_k=dict(enumerate(nuis["n_k"].tolist())),
-        smd=balance,
-        max_smd=float(balance.abs().max()),
         mw_fit=_MW_FIT[mw],
         mw_rounds=nuis["mw_rounds"],
         mw_converged=nuis["mw_converged"],
@@ -223,8 +228,10 @@ def estimate_multi(
             ci_if=(tau - _Z95 * se, tau + _Z95 * se),
             estimand=name,
             **shared,
-            outcome_fit=_OUTCOME_FIT[outcome] if name == "AIPW" else None,
-            outcome_coef=outcome_coef if name == "AIPW" else None,
+            smd=balance[_target(name)],
+            max_smd=float(balance[_target(name)].abs().max()),
+            outcome_fit=_OUTCOME_FIT[outcome] if name.endswith("AIPW") else None,
+            outcome_coef=outcome_coef if name.endswith("AIPW") else None,
             **boot.get(name, {}),
             runtime=runtime,
             runtime_shared_by=list(estimands),
@@ -273,7 +280,13 @@ def _estimands(A, data, x_cols, K, nuis, names):
     W, Y = data["W"].to_numpy(), data["Y"].to_numpy()
     out = {}
     for name in names:
-        if name == "AIPW":
+        if name.startswith("ATT-"):
+            R = Y
+            if name == "ATT-AIPW":
+                R = Y - data[x_cols + ["intercept"]].to_numpy() @ nuis["beta_0"]
+            tau, _, psi = _att_terms(W, R, e_hat, [np.ones(len(W), bool)],
+                                     normalize=name != "ATT-IPW-HT")
+        elif name == "AIPW":
             X_out = data[x_cols + ["intercept"]].to_numpy()
             mu1, mu0 = X_out @ nuis["beta_1"], X_out @ nuis["beta_0"]
             data["mu1_hat"], data["mu0_hat"] = mu1, mu0
@@ -304,7 +317,8 @@ def _estimands(A, data, x_cols, K, nuis, names):
 
 def _fit_taus(A, data, x_cols, K, estimands, **cfg):
     """Bootstrap fit: refit the nuisances once, return {estimand: τ̂}."""
-    nuis = _fit_nuisances(A, data, x_cols, K, need_outcome="AIPW" in estimands, **cfg)
+    nuis = _fit_nuisances(A, data, x_cols, K, need_outcome=_needs_outcome(estimands),
+                          **cfg)
     return {name: r["tau"] for name, r in _estimands(A, data, x_cols, K, nuis,
                                                       estimands).items()}
 
@@ -586,6 +600,62 @@ def _ipw_terms_hajek(W, Y, e, site_masks, tau_k):
             - n_site / np.sum(w0) * w0 * (Y[m] - m0)
         )
     return psi
+
+
+def _needs_outcome(estimands):
+    return any(name.endswith("AIPW") for name in estimands)
+
+
+def _target(name):
+    return "ATT" if name.startswith("ATT-") else "ATE"
+
+
+def _balance(data, x_cols, e, estimands):
+    """{"ATE"/"ATT": SMDs under the weights of that target} for the targets present:
+    ATE 1/ê and 1/(1-ê); ATT 1 for the treated and ê/(1-ê) for the controls."""
+    W = data["W"].to_numpy()
+    weights = {"ATE": lambda: np.where(W == 1, 1 / e, 1 / (1 - e)),
+               "ATT": lambda: np.where(W == 1, 1.0, e / (1 - e))}
+    return {t: smd(data[x_cols], W, weights[t]())
+            for t in sorted({_target(name) for name in estimands})}
+
+
+def _att_terms(W, R, e, groups, normalize):
+    """ATT by odds weighting within each group (row mask), aggregated with the groups'
+    treated counts n1_k / n1. Returns (τ̂, [τ̂_k], per-unit terms ψ with mean(ψ) = τ̂).
+
+    Per group, with c_i = (1 - W_i) e_i / (1 - e_i):
+      normalize=False (HT):    τ̂_k = Σ (W R - c R) / n1_k
+      normalize=True (Hajek):  τ̂_k = Σ W R / n1_k - Σ c R / Σ c
+    R = Y for IPW; R = Y - μ̂_0(x) for the doubly robust ATT-AIPW.
+    ψ_i = τ̂ + [W (R - m1_k) - c (R - m0_k) n1_k / Σ_k c] / p̂1 (normalized; for HT
+    W (R - τ̂_k) - c R), p̂1 = n1 / n: the linearization with nuisances fixed.
+    A group without treated units gets τ̂_k = NaN and weight 0.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        c = (1 - W) * e / (1 - e)
+    n, n1 = len(W), W.sum()
+    dev = np.zeros(n)
+    tau_k, n1_k = [], []
+    for g in groups:
+        g = np.asarray(g)
+        Wg, Rg, cg = W[g], R[g], c[g]
+        n1g = Wg.sum()
+        n1_k.append(n1g)
+        if n1g == 0:
+            tau_k.append(float("nan"))
+            continue
+        m1 = np.sum(Wg * Rg) / n1g
+        if normalize:
+            m0 = np.sum(cg * Rg) / np.sum(cg)
+            t = m1 - m0
+            dev[g] = Wg * (Rg - m1) - cg * (Rg - m0) * n1g / np.sum(cg)
+        else:
+            t = m1 - np.sum(cg * Rg) / n1g
+            dev[g] = Wg * (Rg - t) - cg * Rg
+        tau_k.append(float(t))
+    tau = float(sum(w * t for w, t in zip(n1_k, tau_k) if w > 0) / n1)
+    return tau, tau_k, tau + dev / (n1 / n)
 
 
 def _if_se(psi):

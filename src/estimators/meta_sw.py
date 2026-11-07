@@ -17,10 +17,11 @@ import numpy as np
 import pandas as pd
 
 from src.estimators._authors import dgp_fed
-from src.estimators.balance import smd
 from src.estimators.fed_ps import (
     _Z95,
     _aipw_terms,
+    _att_terms,
+    _balance,
     _if_se,
     _int_seed,
     _ipw_terms_hajek,
@@ -28,10 +29,14 @@ from src.estimators.fed_ps import (
     _label,
     _local_propensities,
     _site_stratified_bootstrap,
+    _target,
     _to_authors_frame,
 )
 
-ESTIMANDS = ("IPW-HT", "IPW-Hajek", "AIPW")
+ESTIMANDS = ("IPW-HT", "IPW-Hajek", "AIPW", "ATT-IPW-HT", "ATT-IPW-Hajek", "ATT-AIPW")
+# ATT versions: each site's ATT with its own ê_k (odds weights on its controls; for
+# ATT-AIPW its own control outcome model), averaged with the treated counts n1_k / n1
+# (fed_ps._att_terms with the sites as groups).
 _IMPLEMENTED = {"local_ps": {"logistic", "rf"}}
 
 
@@ -90,12 +95,8 @@ def estimate_multi(df, estimands, local_ps="logistic", seed=None, bootstrap=0,
     fit = _fit(A, data, x_cols, K, estimands=estimands, **cfg)
 
     e_own = fit["e_own"]
-    if fit["undefined_reason"] is None:
-        weights = np.where(data["W"] == 1, 1 / e_own, 1 / (1 - e_own))
-        balance = smd(data[x_cols], data["W"], weights)
-        max_smd = float(balance.abs().max())
-    else:
-        balance, max_smd = None, float("nan")
+    balance = (_balance(data, x_cols, e_own, estimands)
+               if fit["undefined_reason"] is None else {})
 
     boot = {}
     if bootstrap_for:
@@ -111,16 +112,17 @@ def estimate_multi(df, estimands, local_ps="logistic", seed=None, bootstrap=0,
             se=se,
             se_method="influence function, nuisances treated as fixed (provisional)",
             ci_if=(tau - _Z95 * se, tau + _Z95 * se),
-            max_smd=max_smd,
+            max_smd=(float(balance[_target(name)].abs().max()) if balance
+                     else float("nan")),
             estimand=name,
             tau_k=dict(enumerate(fit["est"][name]["tau_k"])),
             n_k=dict(enumerate(fit["n_k"].tolist())),
             undefined_reason=fit["undefined_reason"],
             e_own=pd.Series(e_own, index=df.index, name="e_own"),
-            smd=balance,
+            smd=balance.get(_target(name)),
             local_ps_fit=local_ps,
             ps_seed=cfg["ps_seed"],
-            outcome_fit="local-ols" if name == "AIPW" else None,
+            outcome_fit="local-ols" if name.endswith("AIPW") else None,
             **boot.get(name, {}),
             runtime=runtime,
             runtime_shared_by=list(estimands),
@@ -129,7 +131,8 @@ def estimate_multi(df, estimands, local_ps="logistic", seed=None, bootstrap=0,
 
 
 def _fit(A, data, x_cols, K, estimands, local_ps, ps_seed):
-    """Per-site estimates with local nuisances, aggregated with n_k / n."""
+    """Per-site estimates with local nuisances, aggregated with n_k / n (ATE) or
+    n1_k / n1 (ATT)."""
     data = data.copy()
     ps_cols = x_cols + ["intercept"]
     site_masks = [data["client"] == _label(k) for k in range(K)]
@@ -148,18 +151,28 @@ def _fit(A, data, x_cols, K, estimands, local_ps, ps_seed):
     e_own = e_local[np.arange(len(data)), [int(c[6:]) - 1 for c in data["client"]]]
 
     data["e_own"] = e_own
+    if any(name.endswith("AIPW") for name in estimands):
+        X_out = data[ps_cols].to_numpy()
+        mu1, mu0 = np.empty(len(data)), np.empty(len(data))
+        for mask in site_masks:
+            site = data[mask]
+            m = mask.to_numpy()
+            beta_1 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 1], ps_cols))
+            beta_0 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 0], ps_cols))
+            mu1[m], mu0[m] = X_out[m] @ beta_1, X_out[m] @ beta_0
+        data["mu1_hat"], data["mu0_hat"] = mu1, mu0
     est = {}
     for name in estimands:
+        if name.startswith("ATT-"):
+            R = Y - mu0 if name == "ATT-AIPW" else Y
+            tau, tau_k, psi = _att_terms(W, R, e_own, [m.to_numpy() for m in site_masks],
+                                         normalize=name != "ATT-IPW-HT")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                se = _if_se(psi)
+            est[name] = dict(tau=tau, se=se, tau_k=tau_k)
+            continue
         if name == "AIPW":
-            X_out = data[ps_cols].to_numpy()
-            mu1, mu0 = np.empty(len(data)), np.empty(len(data))
-            for mask in site_masks:
-                site = data[mask]
-                m = mask.to_numpy()
-                beta_1 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 1], ps_cols))
-                beta_0 = np.asarray(A.estimate_beta_MLE(site[site["W"] == 0], ps_cols))
-                mu1[m], mu0[m] = X_out[m] @ beta_1, X_out[m] @ beta_0
-            data["mu1_hat"], data["mu0_hat"] = mu1, mu0
             tau_k = [
                 A.aipw_function(data[m], y1_col="mu1_hat", y0_col="mu0_hat", e_col="e_own")
                 for m in site_masks

@@ -2,7 +2,8 @@
 Matching::GenMatch + Match through rpy2.
 
 Settings follow the genmatch-lalonde pipeline (rofiaa/genmatch-lalonde, R/00_config.R,
-R/04_matching.R), which follows D&S, except that the estimand is the ATE:
+R/04_matching.R), which follows D&S, except that the estimand is the ATE by default
+(target="ATT" gives D&S's own estimand, used for the IHDP ATT comparison):
   - matching covariates: X1..Xd, plus the logit of the pooled logistic propensity
     score when covariates="X+ps" (pooled_ps.pooled_ps_logit: the same ê that
     pooled_ps weights with, so GM and pooled IPW differ only in matching vs weighting);
@@ -13,7 +14,7 @@ R/04_matching.R), which follows D&S, except that the estimand is the ATE:
   - fit.func="pvals" (lexical: smallest paired-t / KS p-value first), ks=TRUE,
     nboots=0, pop.size=1000, max.generations=100 (soft limit), wait.generations=10;
   - Match: M=1, with replacement, weighted ties, no caliper, Weight.matrix from
-    GenMatch on the *same* X, estimand="ATE" in both calls.
+    GenMatch on the *same* X, estimand=target ("ATE" by default) in both calls.
 The site H is not used: in the DGPs here the outcome depends on X only, so H affects
 Y only through X and treatment (matching on X alone is valid; see docs/findings.md).
 
@@ -49,7 +50,7 @@ def estimate(df, estimand="GM", **cfg):
 
 
 def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=1,
-                   genmatch_params=None, balance_quad=None):
+                   genmatch_params=None, balance_quad=None, target="ATE"):
     """{estimand: result}; one GenMatch search shared by "GM" and "GM-BA".
 
     df: columns X1..Xd, W (0/1), Y (H, if present, is ignored).
@@ -58,6 +59,7 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
         (None -> fresh entropy, returned as gm_seeds).
     cores: >1 runs the GenMatch search on a local R parallel cluster.
     genmatch_params: overrides of GENMATCH_DEFAULTS.
+    target: "ATE" (default) or "ATT", passed as `estimand` to GenMatch and Match.
     balance_quad: covariate names whose squares and pairwise products enter the
         balance matrix (None = all of X1..Xd); every covariate enters linearly.
 
@@ -72,6 +74,8 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
     unknown = set(estimands) - set(ESTIMANDS)
     if unknown:
         raise NotImplementedError(f"estimands {sorted(unknown)} are not implemented")
+    if target not in ("ATE", "ATT"):
+        raise ValueError("target must be 'ATE' or 'ATT'")
     if covariates not in ("X", "X+ps"):
         raise ValueError("covariates must be 'X' or 'X+ps'")
     gm = {**GENMATCH_DEFAULTS, **(genmatch_params or {})}
@@ -99,7 +103,7 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
     quad = None if balance_quad is None else [x_cols.index(c) for c in balance_quad]
     Z = X  # bias-adjustment regressors: the covariates (Match's default Z = X)
 
-    r = dict(Tr=ro.FloatVector(W), X=_r_matrix(ro, X_match), estimand="ATE",
+    r = dict(Tr=ro.FloatVector(W), X=_r_matrix(ro, X_match), estimand=target,
              M=1, replace=True, ties=True)
     y_r, z_r = ro.FloatVector(Y), _r_matrix(ro, Z)
 
@@ -141,7 +145,7 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
         gm_fitness = list(np.asarray(gen.rx2("value"), dtype=float))
         gm_weights = dict(zip(match_cols, np.diag(np.asarray(gen.rx2("Weight.matrix")))))
     quad_desc = "all" if balance_quad is None else "+".join(balance_quad)
-    settings = dict(covariates=covariates,
+    settings = dict(target=target, covariates=covariates,
                     balance_matrix=f"X; squares and products of {quad_desc}",
                     fit_func="pvals", ks=True, M=1, replace=True, ties=True, **gm)
     for name, m in fits.items():
@@ -158,6 +162,7 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
             ci_ai=(tau - 1.959963984540054 * se, tau + 1.959963984540054 * se),
             max_smd=float(balance.abs().max()),
             estimand=name,
+            target=target,
             covariates=covariates,
             smd=balance,
             unit_weights=pd.Series(unit_w.to_numpy(), index=df.index, name="w_match"),

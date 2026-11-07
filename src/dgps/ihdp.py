@@ -10,9 +10,10 @@ Covariates x1..x25: x1..x6 continuous, x7..x18 binary (x14 coded 1/2), x19..x25 
 of 7 of the 8 IHDP sites (none = site 0). Sites are H = 0..7. Four sites have 2-9
 treated units, so local overlap is poor in a natural way.
 
-Truth per replication (attached as df.attrs): tau_true = mean(mu1 - mu0) over the 747
+Truth per replication (attached as df.attrs): ate_true = mean(mu1 - mu0) over the 747
 units (the sample ATE, the usual IHDP target), att_true = the same over the treated
-(4 by construction).
+(4 by construction); tau_true, which the harness scores against, is the one named by
+`target`.
 """
 
 from functools import lru_cache
@@ -33,12 +34,15 @@ def _arrays(data_dir):
     return {k: np.concatenate([p[k] for p in parts]) for k in ("x", "t", "yf", "mu0", "mu1")}
 
 
-def load(rep, data_dir=DATA_DIR):
+def load(rep, data_dir=DATA_DIR, target="ATE"):
     """Replication `rep` (0..99) as our frame: X1..X25, H, W, Y.
 
     Rows are put in one canonical order (lexicographic in x), so the design (X, W, H)
     is identical across replications (the files shuffle rows per replication).
+    target: "ATE" or "ATT", the truth put in df.attrs["tau_true"].
     """
+    if target not in ("ATE", "ATT"):
+        raise ValueError("target must be 'ATE' or 'ATT'")
     a = _arrays(str(data_dir))
     x = a["x"][:, :, rep]
     order = np.lexsort(x.T[::-1])
@@ -49,8 +53,9 @@ def load(rep, data_dir=DATA_DIR):
     df["H"] = np.where(dummies.sum(1) == 0, 0, dummies.argmax(1) + 1)
     df["W"] = w
     df["Y"] = a["yf"][order, rep]
-    df.attrs["tau_true"] = float(np.mean(mu1 - mu0))
+    df.attrs["ate_true"] = float(np.mean(mu1 - mu0))
     df.attrs["att_true"] = float(np.mean((mu1 - mu0)[w == 1]))
+    df.attrs["tau_true"] = df.attrs[f"{target.lower()}_true"]
     return df
 
 

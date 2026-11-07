@@ -15,16 +15,19 @@ import numpy as np
 import pandas as pd
 
 from src.estimators._authors import dgp_fed
-from src.estimators.balance import smd
 from src.estimators.fed_ps import (
     _Z95,
+    _balance,
     _estimands,
+    _needs_outcome,
     _outcome_models,
     _site_stratified_bootstrap,
+    _target,
     _to_authors_frame,
 )
 
-ESTIMANDS = ("IPW-HT", "IPW-Hajek_pooled", "AIPW")
+ATE_ESTIMANDS = ("IPW-HT", "IPW-Hajek_pooled", "AIPW")  # the default set
+ESTIMANDS = ATE_ESTIMANDS + ("ATT-IPW-HT", "ATT-IPW-Hajek_pooled", "ATT-AIPW")  # as fed_ps
 
 
 def pooled_ps_logit(df):
@@ -36,7 +39,7 @@ def pooled_ps_logit(df):
     return data[cols].to_numpy() @ np.asarray(A.compute_gamma(data, cols))
 
 
-def estimate_multi(df, estimands=ESTIMANDS, seed=None, bootstrap=0, bootstrap_for=None):
+def estimate_multi(df, estimands=ATE_ESTIMANDS, seed=None, bootstrap=0, bootstrap_for=None):
     """{estimand: result}: frozen keys plus ci_if, estimand, e_hat, smd, ps_fit, and the
     bootstrap extras of fed_ps (site-stratified, ê and outcome models refit) when
     bootstrap > 0."""
@@ -51,11 +54,10 @@ def estimate_multi(df, estimands=ESTIMANDS, seed=None, bootstrap=0, bootstrap_fo
     start = time.perf_counter()
     A = dgp_fed()
     data, x_cols, K = _to_authors_frame(df)
-    nuis = _nuisances(A, data, x_cols, K, need_outcome="AIPW" in estimands)
+    nuis = _nuisances(A, data, x_cols, K, need_outcome=_needs_outcome(estimands))
     fits = _estimands(A, data, x_cols, K, nuis, estimands)
     e_hat = nuis["e_hat"]
-    balance = smd(data[x_cols], data["W"],
-                  np.where(data["W"] == 1, 1 / e_hat, 1 / (1 - e_hat)))
+    balance = _balance(data, x_cols, e_hat, estimands)
     boot = {}
     if bootstrap_for:
         boot = _site_stratified_bootstrap(A, data, x_cols, K,
@@ -70,12 +72,12 @@ def estimate_multi(df, estimands=ESTIMANDS, seed=None, bootstrap=0, bootstrap_fo
             se=se,
             se_method="influence function, nuisances treated as fixed (provisional)",
             ci_if=(tau - _Z95 * se, tau + _Z95 * se),
-            max_smd=float(balance.abs().max()),
+            max_smd=float(balance[_target(name)].abs().max()),
             estimand=name,
             e_hat=pd.Series(e_hat, index=df.index, name="e_hat"),
-            smd=balance,
+            smd=balance[_target(name)],
             ps_fit="pooled-logistic",
-            outcome_fit="pooled-ols" if name == "AIPW" else None,
+            outcome_fit="pooled-ols" if name.endswith("AIPW") else None,
             **boot.get(name, {}),
             runtime=runtime,
             runtime_shared_by=list(estimands),
@@ -98,5 +100,5 @@ def _nuisances(A, data, x_cols, K, need_outcome):
 
 
 def _fit_taus(A, data, x_cols, K, estimands):
-    nuis = _nuisances(A, data, x_cols, K, need_outcome="AIPW" in estimands)
+    nuis = _nuisances(A, data, x_cols, K, need_outcome=_needs_outcome(estimands))
     return {n: r["tau"] for n, r in _estimands(A, data, x_cols, K, nuis, estimands).items()}

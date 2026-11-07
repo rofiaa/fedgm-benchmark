@@ -27,6 +27,14 @@ def test_truth_attached():
     assert df.attrs["tau_true"] == pytest.approx(4.016, abs=1e-3)  # CEVAE replication 1
 
 
+def test_att_target():
+    df = ihdp.load(0, target="ATT")
+    assert df.attrs["tau_true"] == pytest.approx(4.0)
+    assert df.attrs["ate_true"] == ihdp.load(0).attrs["tau_true"]
+    with pytest.raises(ValueError):
+        ihdp.load(0, target="ATC")
+
+
 def test_without_site_dummies():
     df = ihdp.without_site_dummies(ihdp.load(0))
     assert [c for c in df if c.startswith("X")] == [f"X{i}" for i in range(1, 19)]
