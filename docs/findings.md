@@ -383,6 +383,49 @@ Narval:
 - fed_nn differs by up to 0.5% (torch); the others by < 1e-4.
 - Negligible against the errors above (SD ≥ 0.36).
 
+### N4. With equal outcome models and M > 1, matching ties AIPW on IHDP but does not beat it
+
+`experiments/checks/ihdp_flexible_ba.py` → `results/checks/ihdp_flexible_ba.csv`.
+
+**Setup.**
+- Reuses each replication's stored GenMatch weights (no new search; the searches ran
+  with M = 1).
+- Matching: M ∈ {1, 2, 4, 8}, bias adjustment ∈ {none, linear, quadratic, random
+  forest}.
+- AIPW with the same outcome models.
+- All outcome models are centralized and fitted on X1..X25: linear in-sample,
+  quadratic 5-fold cross-fitted, random forest out-of-bag.
+- Recomputed M = 1 matching reproduces the stored GM / Maha estimates to 4e-15.
+
+**IHDP results.** RMSE over 100 replications, then over the 90 calmer ones:
+
+| | ATT | ATE |
+|---|---|---|
+| AIPW, random forest, fed logistic / fed NN ê | **0.354 / 0.358** (0.16 / 0.17) | 0.131 / **0.126** |
+| Best matching: Maha, M = 8, quadratic BA (ATT); Maha, M = 4, RF BA (ATE) | 0.385 (0.15) | 0.159 |
+| GenMatch weights, best variant | 0.401, M = 8, quadratic | 0.164, M = 8, linear |
+| Regression only, quadratic (ATT) / linear (ATE) | 0.404 | 0.175 |
+| Previous GM-BA (M = 1, linear BA) | 0.581 | 0.190 |
+
+**Paired |error|, best matching minus Fed-AIPW-RF:**
+- ATT: +0.004 ± 0.027; −0.007 ± 0.012 on the calm 90.
+- ATE: −0.001 ± 0.010 against fed logistic; +0.010 ± 0.009 against fed NN.
+- Best GenMatch-weighted variant against Fed-AIPW-NN-RF on the ATE: +0.029 ± 0.011.
+
+**Conclusion.**
+- More neighbours plus a better bias adjustment remove most of matching's gap: GM's
+  ATT RMSE drops by about 30%.
+- With the same outcome model, the best matching ties federated AIPW and does not
+  beat it.
+- GenMatch's weight search adds nothing over Mahalanobis once M > 1 and a good
+  adjustment are used.
+- The outcome model does most of the work: regression alone is close.
+- Model choice matters by side:
+  - The forest, being piecewise flat, gives poor within-pair corrections for matching
+    on the ATT.
+  - The quadratic model extrapolates badly from 139 treated to the controls, so
+    AIPW-quad fails on the ATE.
+
 ---
 
 ## Compatibility notes (no effect on results)
