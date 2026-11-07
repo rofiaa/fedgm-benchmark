@@ -1,0 +1,203 @@
+[IHDP_ATT] true ATE nan (MC SE nan)
+100 (scenario, rep) pairs to run, 0 already complete; 6 worker(s)
+[02:51:07] 1/100 (scenario, rep) done; elapsed 0.07 h; projected finish Sat 09:40 (6.8 h left)
+[02:51:10] 2/100 (scenario, rep) done; elapsed 0.07 h; projected finish Sat 06:16 (3.4 h left)
+[02:51:10] 3/100 (scenario, rep) done; elapsed 0.07 h; projected finish Sat 05:06 (2.3 h left)
+[02:51:11] 4/100 (scenario, rep) done; elapsed 0.07 h; projected finish Sat 04:32 (1.7 h left)
+[02:51:12] 5/100 (scenario, rep) done; elapsed 0.07 h; projected finish Sat 04:11 (1.3 h left)
+[02:51:13] 6/100 (scenario, rep) done; elapsed 0.07 h; projected finish Sat 03:57 (1.1 h left)
+[02:55:09] 7/100 (scenario, rep) done; elapsed 0.14 h; projected finish Sat 04:43 (1.8 h left)
+[02:55:12] 8/100 (scenario, rep) done; elapsed 0.14 h; projected finish Sat 04:29 (1.6 h left)
+[02:55:13] 9/100 (scenario, rep) done; elapsed 0.14 h; projected finish Sat 04:18 (1.4 h left)
+[02:55:15] 10/100 (scenario, rep) done; elapsed 0.14 h; projected finish Sat 04:09 (1.2 h left)
+[02:55:17] 11/100 (scenario, rep) done; elapsed 0.14 h; projected finish Sat 04:02 (1.1 h left)
+[02:55:18] 12/100 (scenario, rep) done; elapsed 0.14 h; projected finish Sat 03:56 (1.0 h left)
+[02:58:53] 13/100 (scenario, rep) done; elapsed 0.20 h; projected finish Sat 04:18 (1.3 h left)
+[02:58:59] 14/100 (scenario, rep) done; elapsed 0.20 h; projected finish Sat 04:12 (1.2 h left)
+[02:59:00] 15/100 (scenario, rep) done; elapsed 0.20 h; projected finish Sat 04:07 (1.1 h left)
+[02:59:03] 16/100 (scenario, rep) done; elapsed 0.20 h; projected finish Sat 04:02 (1.1 h left)
+[02:59:06] 17/100 (scenario, rep) done; elapsed 0.20 h; projected finish Sat 03:58 (1.0 h left)
+[02:59:08] 18/100 (scenario, rep) done; elapsed 0.20 h; projected finish Sat 03:54 (0.9 h left)
+[03:02:31] 19/100 (scenario, rep) done; elapsed 0.26 h; projected finish Sat 04:08 (1.1 h left)
+[03:02:38] 20/100 (scenario, rep) done; elapsed 0.26 h; projected finish Sat 04:05 (1.0 h left)
+[03:02:39] 21/100 (scenario, rep) done; elapsed 0.26 h; projected finish Sat 04:01 (1.0 h left)
+[03:02:44] 22/100 (scenario, rep) done; elapsed 0.26 h; projected finish Sat 03:58 (0.9 h left)
+[03:02:47] 23/100 (scenario, rep) done; elapsed 0.26 h; projected finish Sat 03:55 (0.9 h left)
+[03:02:50] 24/100 (scenario, rep) done; elapsed 0.26 h; projected finish Sat 03:53 (0.8 h left)
+[03:06:19] 25/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 04:04 (1.0 h left)
+[03:06:20] 26/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 04:01 (0.9 h left)
+[03:06:22] 27/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:58 (0.9 h left)
+[03:06:23] 28/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:56 (0.8 h left)
+[03:06:25] 29/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:54 (0.8 h left)
+[03:06:26] 30/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:51 (0.8 h left)
+[03:06:27] 31/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:49 (0.7 h left)
+[03:06:28] 32/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:47 (0.7 h left)
+[03:06:28] 33/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:46 (0.7 h left)
+[03:06:29] 34/100 (scenario, rep) done; elapsed 0.32 h; projected finish Sat 03:44 (0.6 h left)
+[03:06:29] 35/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:42 (0.6 h left)
+[03:06:30] 36/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:41 (0.6 h left)
+[03:06:30] 37/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:39 (0.6 h left)
+[03:06:31] 38/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:38 (0.5 h left)
+[03:06:31] 39/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:37 (0.5 h left)
+[03:06:32] 40/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:35 (0.5 h left)
+[03:06:32] 41/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:34 (0.5 h left)
+[03:06:33] 42/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:33 (0.5 h left)
+[03:06:33] 43/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:32 (0.4 h left)
+[03:06:33] 44/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:31 (0.4 h left)
+[03:06:34] 45/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:30 (0.4 h left)
+[03:06:34] 46/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:29 (0.4 h left)
+[03:06:34] 47/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:28 (0.4 h left)
+[03:06:35] 48/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:27 (0.4 h left)
+[03:06:35] 49/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:27 (0.3 h left)
+[03:06:36] 50/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:26 (0.3 h left)
+[03:06:36] 51/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:25 (0.3 h left)
+[03:06:36] 52/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:24 (0.3 h left)
+[03:06:37] 53/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:24 (0.3 h left)
+[03:06:37] 54/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:23 (0.3 h left)
+[03:06:37] 55/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:22 (0.3 h left)
+[03:06:38] 56/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:22 (0.3 h left)
+[03:06:38] 57/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:21 (0.2 h left)
+[03:06:38] 58/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:20 (0.2 h left)
+[03:06:39] 59/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:20 (0.2 h left)
+[03:06:39] 60/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:19 (0.2 h left)
+[03:06:39] 61/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:19 (0.2 h left)
+[03:06:40] 62/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:18 (0.2 h left)
+[03:06:40] 63/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:18 (0.2 h left)
+[03:06:40] 64/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:17 (0.2 h left)
+[03:06:40] 65/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:17 (0.2 h left)
+[03:06:41] 66/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:16 (0.2 h left)
+[03:06:41] 67/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:16 (0.2 h left)
+[03:06:42] 68/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:15 (0.2 h left)
+[03:06:42] 69/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:15 (0.1 h left)
+[03:06:42] 70/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:15 (0.1 h left)
+[03:06:42] 71/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:14 (0.1 h left)
+[03:06:43] 72/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:14 (0.1 h left)
+[03:06:43] 73/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:14 (0.1 h left)
+[03:06:43] 74/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:13 (0.1 h left)
+[03:06:44] 75/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:13 (0.1 h left)
+[03:06:44] 76/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:12 (0.1 h left)
+[03:06:44] 77/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:12 (0.1 h left)
+[03:06:44] 78/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:12 (0.1 h left)
+[03:06:45] 79/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:12 (0.1 h left)
+[03:06:45] 80/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:11 (0.1 h left)
+[03:06:45] 81/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:11 (0.1 h left)
+[03:06:45] 82/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:11 (0.1 h left)
+[03:06:45] 83/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:10 (0.1 h left)
+[03:06:46] 84/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:10 (0.1 h left)
+[03:06:46] 85/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:10 (0.1 h left)
+[03:06:46] 86/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:10 (0.1 h left)
+[03:06:47] 87/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:09 (0.0 h left)
+[03:06:47] 88/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:09 (0.0 h left)
+[03:06:47] 89/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:09 (0.0 h left)
+[03:06:47] 90/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:08 (0.0 h left)
+[03:06:47] 91/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:08 (0.0 h left)
+[03:06:48] 92/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:08 (0.0 h left)
+[03:06:48] 93/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:08 (0.0 h left)
+[03:06:48] 94/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:08 (0.0 h left)
+[03:06:48] 95/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:07 (0.0 h left)
+[03:06:49] 96/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:07 (0.0 h left)
+[03:06:49] 97/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:07 (0.0 h left)
+[03:06:49] 98/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:07 (0.0 h left)
+[03:06:49] 99/100 (scenario, rep) done; elapsed 0.33 h; projected finish Sat 03:07 (0.0 h left)
+[03:06:49] 100/100 (scenario, rep) done; elapsed 0.33 h
+wrote results/ihdp_att/rows/IHDP_ATT/rep0000.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0001.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0003.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0005.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0002.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0004.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0006.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0007.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0009.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0008.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0010.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0011.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0012.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0013.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0014.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0015.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0016.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0017.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0018.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0019.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0020.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0021.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0022.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0023.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0024.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0030.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0031.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0032.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0033.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0034.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0025.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0035.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0036.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0026.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0037.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0038.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0039.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0040.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0041.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0042.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0043.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0044.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0027.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0045.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0046.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0047.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0048.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0049.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0050.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0051.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0052.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0053.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0054.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0055.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0056.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0057.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0058.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0028.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0059.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0060.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0061.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0062.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0063.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0064.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0065.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0066.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0067.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0068.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0069.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0070.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0071.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0029.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0072.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0073.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0074.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0075.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0076.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0077.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0078.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0079.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0080.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0081.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0082.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0084.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0083.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0085.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0086.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0087.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0088.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0089.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0090.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0091.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0092.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0093.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0094.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0095.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0096.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0097.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0098.csv
+wrote results/ihdp_att/rows/IHDP_ATT/rep0099.csv
+done in 1196s

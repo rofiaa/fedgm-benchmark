@@ -315,6 +315,74 @@ A quadratic Z gives matching a correctly specified outcome model, while our AIPW
 outcome models are linear in X. A fair comparison needs the same outcome-model class
 on both sides (open decision).
 
+### N3. GenMatch never reaches balance on the ATE; on the ATT it does (IHDP)
+
+**Flag.** In the IHDP ATE run (`results/ihdp_mc`, 100 replications), GenMatch's
+lexical fitness, the smallest balance p-value after matching, lies between 1e-7 and
+6e-5 in every replication. The learned weights stay close to uniform, and GM-BA is no
+better than Mahalanobis-BA. On the authors' DGPs (`results/gm_mc` pilot) it lies
+between 1e-13 and 0.02.
+
+**Check.** On IHDP replication 0, a short search (pop 200, 30 generations) and
+MatchBalance on the same balance matrix:
+
+| | Min balance p-value | Worst terms (std. diff. ×100) |
+|---|---|---|
+| GenMatch, ATE | 4e-7 | x3² (−23), x9 (22), site-5 dummy x23 (−15) |
+| Mahalanobis, ATE | 4e-16 | x3² (−47), x1·x3 (31), x23 (−36) |
+| GenMatch, ATT | 0.22 | about ±10 |
+| Mahalanobis, ATT | 0.007 | x5² (24) |
+
+genmatch-lalonde's IHDP run (ATT) reported 0.25.
+
+**Conclusion.** The code is correct; the estimand is the problem. On the ATE, each of
+the 608 controls needs a treated match among only 139 treated, and some regions have
+almost none: X18 = 0 has 1 treated and 26 controls, site 5 has 2 treated and 53
+controls. The weights cannot create treated units, so the imbalance is structural
+(one-sided overlap). In the full ATT run (`results/ihdp_att_cc`, Narval), the min
+p-value is 0.15–0.32 in every replication, and GM-BA beats Mahalanobis-BA (RMSE 0.61
+vs 0.67).
+
+IHDP ATT results (`experiments/configs/ihdp_att.py`; truth 4 in every replication):
+
+- Errors are heavy-tailed for every method: |error| correlates 0.72 with the
+  replication's outcome SD.
+- The ATT has to impute the control surface for the treated, and that surface is
+  exponential in Hill's surface B.
+
+| | RMSE (100) | RMSE (90 calmer reps*) | Median \|err\| |
+|---|---|---|---|
+| Meta-SW AIPW | 0.40 | 0.18 | 0.11 |
+| Fed-AIPW, NN weights | 0.40 | 0.27 | 0.14 |
+| Fed-AIPW, logistic / FedAvg weights | 0.49 | 0.29 | 0.16 |
+| Pooled PS-AIPW | 0.53 | 0.20 | 0.10 |
+| GM-BA | 0.61 | 0.24 | 0.12 |
+| Mahalanobis-BA | 0.67 | 0.29 | 0.13 |
+
+\* Excluding the 10 replications with the largest outcome SD.
+
+Paired |error| differences, GM-BA minus competitor, on the 90 calmer replications:
+
+| Competitor | Difference |
+|---|---|
+| Fed-AIPW-logistic | −0.050 ± 0.021 |
+| Fed-AIPW-NN | −0.030 ± 0.020 |
+| Meta-AIPW | +0.027 ± 0.020 |
+| Pooled AIPW | +0.021 ± 0.019 |
+
+On the 10 extreme replications, GM-BA is the worst of these (mean |err| 1.25 vs
+0.81–1.00). Fed-AIPW's −0.2 bias comes from its single linear outcome model;
+Meta-SW's per-site models follow the curvature better.
+
+**Cross-machine.** The PS configs ran on the Mac (`results/ihdp_att_mac`) and on
+Narval:
+
+- fed_logistic differs by up to 0.009 in τ̂. The authors' `MW_estimation_pooled`
+  lbfgs fit does not converge on IHDP's unscaled covariates (sklearn
+  ConvergenceWarning), so its stopping point depends on BLAS.
+- fed_nn differs by up to 0.5% (torch); the others by < 1e-4.
+- Negligible against the errors above (SD ≥ 0.36).
+
 ---
 
 ## Compatibility notes (no effect on results)
