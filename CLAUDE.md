@@ -194,6 +194,18 @@ notebook's code (they differ from App. D Table 2; F3).
   on X1..X18 + H, pooled PS and GenMatch on X1..X25 (site dummies); GenMatch balance
   matrix = 25 covariates + squares/products of X1..X6 (`balance_quad`). Fed-DW is not
   applicable (singular site covariances). GenMatch ≈ 23 min per replication on one core.
+- FedDSM (our proposed method; docs/findings.md N5–N8) in `src/estimators/feddsm.py`
+  (`estimate_multi(df, estimands, target="ATE"|"ATT", ps="x"|"site"|"khellaf", M=4)`):
+  match on (logit ê, cross-fitted quadratic prognostic score m̂₀ [, m̂₁]) with
+  Mahalanobis, M = 4, same-model bias adjustment. ê by distributed Newton (exact pooled
+  MLE; ps="site" adds site indicators); m̂ from per-site, per-fold sufficient statistics.
+  The PS follows the dataset's confounding assumption: "x" for the authors' DGPs
+  (the site is not a confounder), "site" for IHDP. No SE yet (se = NaN). Privacy: the
+  per-site, per-fold sums disclose patients exactly in cells of 1–2 patients; a
+  protocol and threat model are pending.
+- `experiments/compile_comparison.py` → `results/comparison/` builds the all-methods ×
+  all-datasets table; `docs/evaluation_metrics.md` logs the metrics used in the
+  literature (read from the papers; verbatim vs summary marked).
 - `experiments/configs/ps_mc.py`: the six-scenario PS-aggregation MC.
   `experiments/mini_mc.py` is superseded (kept for its committed results).
 
