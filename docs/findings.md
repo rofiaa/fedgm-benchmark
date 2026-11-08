@@ -426,6 +426,69 @@ Narval:
   - The quadratic model extrapolates badly from 139 treated to the controls, so
     AIPW-quad fails on the ATE.
 
+### N5. Double-score matching (DSM) reaches Fed-AIPW's accuracy; with the federated PS, site balance fails
+
+`experiments/checks/ihdp_dsm.py` → `results/checks/ihdp_dsm.csv`.
+
+**Setup.**
+- Mahalanobis matching on V = (logit ê, m̂_0) for the ATT, and (logit ê, m̂_0, m̂_1) for
+  the ATE.
+- m̂_w are the cross-fitted outcome models of N4 (same seeds), so no unit's Y enters its
+  own score.
+- ê is the pooled logistic (X1..X25), federated logistic or federated NN score.
+- The X + PS sets reproduce N4's estimates exactly.
+
+**Prespecified variant: the score's outcome model also used for bias adjustment,
+M = 4.**
+
+| | ATT RMSE | Paired \|err\| vs Fed-AIPW-RF (log) | max \|SMD\| on X1..X25 | ATE RMSE | Paired vs Fed-AIPW-RF (log) |
+|---|---|---|---|---|---|
+| DSM, pooled PS, quadratic score | 0.283 | −0.036 ± 0.022 | 0.11 | 0.158 | +0.017 ± 0.009 |
+| DSM, federated logistic PS, quadratic score | 0.321 | −0.014 ± 0.025 | 0.28 | 0.152 | +0.004 ± 0.009 |
+| DSM, federated logistic PS, RF score | 0.417 | +0.037 ± 0.023 | 0.28 | 0.139 | −0.000 ± 0.006 |
+| Best X + PS matching (N4) | 0.385 | — | 0.23 | 0.159 | — |
+| Fed-AIPW-RF (logistic) | 0.354 | — | — | 0.131 | — |
+
+The best cell of the whole grid (ATT 0.249) is selection-optimistic.
+
+**Conclusion.**
+- DSM is the first matching method to reach parity with Fed-AIPW using the same
+  nuisance models. It is slightly ahead on the ATT (not significant) and tied on the
+  ATE.
+- Balance is acceptable only with the pooled PS.
+- The federated ê(x) is a function of X1..X18 only (site enters through ω), so matching
+  on it leaves the site dummies unbalanced (|SMD| 0.20–0.28 on X20, X23, X25 in
+  replications 0–1). A federated DSM has to handle site balance explicitly.
+- The best score model differs by target: quadratic for the ATT, RF for the ATE.
+
+### N6. LaLonde: no method is consistently closest to the experimental benchmark
+
+`experiments/checks/lalonde_ps.py` → `results/checks/lalonde_ps.csv`.
+
+**Setup.**
+- Dehejia–Wahba NSW treated with PSID-1 or CPS-1 controls, genmatch-lalonde's 8
+  covariates and additive logistic PS.
+- ATT on re78; benchmark $1,794 (SE $671).
+- GenMatch estimates are genmatch-lalonde's: CPS-1 $1,698, PSID-1 $400; D&S report
+  $1,734 / $1,045.
+
+| | PSID-1 | CPS-1 |
+|---|---|---|
+| PS IPW-HT / Hajek | 1,778 / 1,759 | 1,197 / 1,184 |
+| PS AIPW, linear / RF outcome | 2,053 / 1,738 | 1,275 / 1,618 |
+| GenMatch (genmatch-lalonde) | 400 | 1,698 |
+| Mahalanobis X + PS, M = 4, linear BA | 1,502 | 1,924 |
+| DSM, M = 4, none / RF BA | 1,682 / 1,968 | 1,280 / 1,317 |
+
+**Conclusion.**
+- GenMatch is the closest on CPS-1 but among the furthest on PSID-1, where every PS
+  weighting estimator is within $60 of the benchmark.
+- Plain Mahalanobis with M = 4 does about as well as GenMatch on CPS-1.
+- Almost all differences are within one benchmark SE, so LaLonde cannot rank these
+  methods. It gives no evidence of a systematic GenMatch advantage.
+- Caveat: genmatch-lalonde's PSID-1 search reached fitness 0.003 vs D&S's 0.029; a
+  longer search might move its estimate.
+
 ---
 
 ## Compatibility notes (no effect on results)
