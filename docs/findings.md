@@ -529,6 +529,48 @@ Matching across sites (M = 4, quadratic BA, prespecified).
 - No inference yet: the matching SE must account for the estimated scores.
 - Cross-site matching on the 2-D scores is the step that needs a privacy design.
 
+### N8. FedDSM on the authors' DGPs: oracle-level accuracy; the gain over the paper comes from the outcome model
+
+`experiments/configs/feddsm_authors.py` (ATE) and `feddsm_authors_att.py` (ATT) →
+`results/feddsm_authors{,_att}`.
+
+**Setup.**
+- Same datasets as `results/ps_mc_v2`: the rerun FedAvg estimator matches to 2e-15.
+- 100 replications per scenario.
+- FedDSM settings fixed before the run.
+- PS: covariates only (primary; the paper's DGPs have no site confounding).
+
+**Paired |err|, FedDSM minus competitor (± SE):**
+
+| | A_no | A_poor | A_good | B_no | B_poor | B_good |
+|---|---|---|---|---|---|---|
+| ATE vs paper's Fed-AIPW (FedAvg) | −0.70 ± 0.03 | −0.64 ± 0.03 | −0.10 ± 0.02 | −0.05 ± 0.01 | −0.05 ± 0.01 | −0.010 ± 0.004 |
+| ATE vs Fed-AIPW, NN membership | −0.09 ± 0.01 | −0.07 ± 0.01 | −0.02 ± 0.01 | −0.06 ± 0.01 | −0.06 ± 0.01 | −0.013 ± 0.004 |
+| ATE vs Oracle AIPW | +0.003 | +0.001 | +0.002 | +0.002 | +0.006 | +0.005 |
+| ATT vs paper's Fed-AIPW (FedAvg) | −0.25 ± 0.03 | −0.05 ± 0.02 | −0.01 ± 0.01 | −0.00 | −0.008 ± 0.003 | 0.000 |
+| ATT vs Fed-AIPW, NN membership | −0.03 ± 0.01 | −0.02 ± 0.01 | +0.01 ± 0.01 | +0.00 | −0.007 ± 0.003 | 0.000 |
+
+**RMSE:**
+- ATE: FedDSM 0.12 / 0.15 / 0.14 / 0.08 / 0.09 / 0.09 against the Oracle's 0.11 /
+  0.15 / 0.14 / 0.08 / 0.08 / 0.08.
+- ATT: 0.28 / 0.29 / 0.26 / 0.12 / 0.10 / 0.11.
+
+**Balance (max |SMD|):**
+- ATT: 0.04–0.11 in every scenario.
+- ATE: 0.04–0.09, except A_no and A_poor (0.18).
+
+**Conclusion.**
+- **Gates:** FedDSM is never worse than the paper's Fed-AIPW in any of the 12
+  target-scenario cells, and is usually much better. It is within 0.006 of the Oracle
+  on the ATE. Balance ≤ 0.12 holds in 10 of 12 cells.
+- **The source of the gain is the outcome model.** FedAIPW-quad, with the same
+  federated nuisances, is identical to FedDSM everywhere (±0.003). The quadratic
+  prognostic model is correctly specified for these DGPs, so this is a favourable
+  case: it shows FedDSM loses nothing, not that matching beats weighting.
+- **The PS choice hardly matters** (covariates only, site-aware, or the paper's).
+- **What matters next** is data where the quadratic model is misspecified (ACIC 2016),
+  where IHDP suggested FedDSM is more robust than AIPW with the same model.
+
 ---
 
 ## Compatibility notes (no effect on results)
