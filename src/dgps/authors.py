@@ -263,3 +263,18 @@ def true_ate(params, dgp, n_total, seed):
     df_auth, _ = generate(params, dgp, seed, oracle=False)
     ite = df_auth["ITE*"].to_numpy()
     return float(ite.mean()), float(ite.std(ddof=1) / np.sqrt(len(ite)))
+
+
+def true_att(params, dgp, n_total, seed):
+    """Monte Carlo ATT: mean of ITE* over the treated of one large sample (as
+    true_ate). Returns (tau, Monte Carlo SE)."""
+    params = {name: dict(p) for name, p in params.items()}
+    if dgp == "A":
+        sites = [name for name in params if name.startswith("client")]
+        for name in sites:
+            params[name]["sample_size"] = n_total // len(sites)
+    else:
+        params["global_population"]["sample_size"] = n_total
+    df_auth, _ = generate(params, dgp, seed, oracle=False)
+    ite = df_auth["ITE*"].to_numpy()[df_auth["W"].to_numpy() == 1]
+    return float(ite.mean()), float(ite.std(ddof=1) / np.sqrt(len(ite)))
