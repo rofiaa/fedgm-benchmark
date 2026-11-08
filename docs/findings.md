@@ -489,6 +489,46 @@ The best cell of the whole grid (ATT 0.249) is selection-optimistic.
 - Caveat: genmatch-lalonde's PSID-1 search reached fitness 0.003 vs D&S's 0.029; a
   longer search might move its estimate.
 
+### N7. FedDSM with exactly federated scores: on the ATT, better than the paper's Fed-AIPW, with good balance
+
+`experiments/checks/ihdp_feddsm.py` → `results/checks/ihdp_feddsm.csv`.
+
+**Components.** Every model is computed only from what sites would share:
+
+| Component | Method | Check |
+|---|---|---|
+| Prognostic score m̂_w | quadratic least squares (X1..X25, squares/products of X1..X6) from summed per-site, per-fold B'B and B'Y; cross-fitted, site-wise folds | = centralized fit with the same folds (max diff 3e-12 sd(Y)) |
+| PS "sitelogit" | logistic on X1..X25 (site dummies) + intercept, distributed Newton (summed gradients and Hessians) | the exact MLE; pooled_ps / the authors' compute_gamma stops lbfgs at 100 iterations, so it differs by up to 0.05 in logit |
+| PS "fedavg" | Khellaf et al.'s federated PS: X1..X18, FedAvg membership | — |
+
+Matching across sites (M = 4, quadratic BA, prespecified).
+
+| | ATT RMSE | Paired \|err\| vs paper's Fed-AIPW (linear, FedAvg) | vs Fed-AIPW, same nuisances | max \|SMD\| (X1-18 / site) | ATE RMSE | ATE vs paper's Fed-AIPW |
+|---|---|---|---|---|---|---|
+| FedDSM, sitelogit PS | 0.293 | −0.129 ± 0.036 | −0.039 ± 0.024 | 0.11 (0.10 / 0.08) | 0.156 | −0.001 ± 0.011 |
+| FedDSM, Khellaf fed PS | 0.287 | −0.118 ± 0.035 | — | 0.28 (0.19 / 0.28) | 0.157 | −0.006 ± 0.011 |
+| FedDSM, sitelogit, within-site matching | 0.455 | −0.070 ± 0.042 | +0.020 ± 0.028 | 0.12 (0.12 / 0) | 0.233 | +0.038 ± 0.014 |
+| Paper's Fed-AIPW / Meta-SW AIPW / Fed-AIPW-RF (central outcome) | 0.488 / 0.396 / 0.354 | | | | 0.157 / 1.61 / 0.131 | |
+
+**Conclusion.**
+- **ATT.** FedDSM with the site-aware PS meets all three gates: accuracy, no worse than
+  Fed-AIPW, and balance. It beats the paper's fully federated Fed-AIPW by 3.6 paired SE
+  and is level with or slightly ahead of every other estimator, at GenMatch-level
+  balance (0.11).
+- **Within-site matching** gives exact site balance but costs accuracy: bias +0.17 from
+  the smaller control pools. The site-aware PS balances sites across sites anyway.
+- **ATE.** Ties the paper's Fed-AIPW; balance stays poor (0.27, one-sided overlap).
+- **Robustness.** With the same quadratic outcome model, AIPW is far worse on the ATE
+  (0.34). Matching uses the model only for within-pair differences, so it is robust to
+  that model's extrapolation.
+
+**Caveats.**
+- The sitelogit PS was added after seeing N5's balance failure.
+- Sensitivity to M: ATT RMSE 0.330 / 0.293 / 0.338 for M = 1 / 4 / 8.
+- One semi-synthetic dataset.
+- No inference yet: the matching SE must account for the estimated scores.
+- Cross-site matching on the 2-D scores is the step that needs a privacy design.
+
 ---
 
 ## Compatibility notes (no effect on results)
