@@ -171,3 +171,44 @@ def test_tuned_score_estimates(target, idx):
     assert abs(res["FedDSM"]["tau"] - truth[idx - 1]) < 0.2
     with pytest.raises(ValueError):
         feddsm.estimate_multi(df, target=target, score="nope")
+
+
+def test_binned_blocks_and_selection_on_a_step_surface():
+    rng = np.random.default_rng(0)
+    n = 3000
+    X = rng.normal(size=(n, 6))
+    H, W = rng.integers(0, 3, n), rng.binomial(1, 0.4, n)
+    Y = 3.0 * (X[:, 0] > 0.5) - 2.0 * (X[:, 1] > -0.7) + rng.normal(size=n) * 0.5
+    quad = list(range(6))
+    edges = feddsm._bin_edges(X[:, quad])
+    B = feddsm._basis_binned(X, quad, None, edges)
+    n_bins = sum(map(len, edges))
+    assert n_bins == 54 and B.shape[1] == 6 + 6 + 15 + 54 + 1
+    blocks = feddsm._score_blocks(6, 6, 0, n_bins)
+    np.testing.assert_array_equal(B[:, 27], (X[:, 0] > edges[0][0]).astype(float))
+    np.testing.assert_array_equal(B[:, blocks["squares"]][:, 6:12], X**2)
+    assert (B[:, -1] == 1).all() and blocks["bins"][-1] == B.shape[1] - 1
+    _, _, info = feddsm.fed_tuned(B, Y, W, H, 0, seed=2, blocks=blocks)
+    assert info["basis"] == "bins"
+
+
+@pytest.mark.parametrize("target", ["ATE", "ATT"])
+def test_binned_and_clip_estimands(target):
+    df, ate, att = _sites_data()
+    truth = ate if target == "ATE" else att
+    names = list(feddsm.ESTIMANDS) + list(feddsm.EXTRA_ESTIMANDS)
+    res = feddsm.estimate_multi(df, names, target=target, seed=1, score="binned")
+    for name, out in res.items():
+        check_result(out)
+    assert abs(res["FedDSM"]["tau"] - truth) < 0.2 and abs(res["FedDSM-clip"]["tau"] - truth) < 0.2
+
+
+def test_clip_changes_only_out_of_range_predictions():
+    df, *_ = _sites_data(n=1500)
+    a = feddsm.estimate_multi(df, ["FedDSM", "FedDSM-clip"], target="ATT", seed=1)
+    # the outcome model rarely leaves the observed range here: clipping is nearly neutral
+    assert abs(a["FedDSM"]["tau"] - a["FedDSM-clip"]["tau"]) < 0.05
+
+
+def test_default_estimands_exclude_clip():
+    assert "FedDSM-clip" not in feddsm.ESTIMANDS

@@ -747,6 +747,25 @@ Primary PS per dataset, same folds as the quadratic FedDSM rows (paired).
 **Decision under the rule:** do not replace the default with score="tuned"; a richer
 sums-based basis (step 2) or an interactive model (step 3) is needed.
 
+### N13. FedDSM with a binned sums-only score (post-hoc; rule fixed before the run, 2026-11-09)
+
+**Change.** `score="binned"`: the N12 search (held-out squared error over basis × ridge
+penalty) with one more basis, main effects + threshold indicators at each continuous
+covariate's deciles (additive step functions, no interactions). One round of sums. New
+estimand `FedDSM-clip`: each m̂_w clipped to the arm's observed outcome range before
+matching and bias adjustment, to test the extrapolation explanation of the blow-ups.
+Post-hoc. Primary PS per dataset, same folds as quadratic FedDSM (paired). New shared
+items (`docs/feddsm_protocol.md`): covariate deciles; for clipping, each arm's min and max Y.
+
+**Rule fixed before the run** (same thresholds as N12).
+- *Primary, ACIC:* share of the RMSE gap between quadratic FedDSM and DSM-RF (ATE
+  0.365 → 0.189, ATT 0.314 → 0.136) closed by binned FedDSM. ≥ 50% on both: one round of
+  sums is enough, no interactive model needed. Under 25% on either: sums-only bases are
+  exhausted, go to federated boosting. Otherwise partial.
+- *No harm:* RMSE on any authors' DGP cell or IHDP (ATE, ATT) at most 0.01 above quadratic FedDSM.
+- *Extrapolation:* supported if FedDSM-clip has at most 1 ACIC ATE dataset with |err| > 2
+  (quadratic FedDSM: 8/1,540; tuned: 7/1,540).
+
 ---
 
 ## Compatibility notes (no effect on results)

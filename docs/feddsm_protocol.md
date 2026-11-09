@@ -55,6 +55,10 @@ Numbers sent per site, from `experiments/checks/feddsm_disclosure_audit.py`, rep
 q = 1,355 columns also for the treated arm on ACIC). Y′Y with n = 1 gives |Y|. Not yet
 audited.
 
+**Addition if score="binned" or clipping is adopted (docs/findings.md N13):** pooled
+deciles of each continuous covariate (the bin edges), and each arm's minimum and maximum
+outcome (for clipping), which are individual patients' values. Not yet audited.
+
 ## 4. What v0 discloses (audit results)
 
 | ID | Disclosure | Evidence |

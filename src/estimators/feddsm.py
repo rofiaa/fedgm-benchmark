@@ -44,6 +44,11 @@ error, from the same per-site, per-fold sums plus Y'Y per cell (fed_tuned). Base
 effects, + squares, + products; lambda / n on standardized columns in SCORE_LAMBDAS; the
 intercept is not penalized. A unit's score still excludes its fold's outcomes, except
 through this one choice of (basis, lambda).
+score="binned" (post-hoc, N13): the same search with one more basis, "bins": main effects
+plus threshold indicators 1{x > edge} at the pooled deciles of each continuous covariate
+(additive step functions; the deciles would be approximate under federation). Estimand
+"FedDSM-clip" (not in ESTIMANDS): FedDSM with each m̂_w clipped to the arm's observed
+outcome range before matching and bias adjustment.
 
 No standard error yet (se = NaN): matching on estimated scores needs an adjusted
 variance; inference is future work.
@@ -63,6 +68,8 @@ PS_MODELS = ("x", "site", "khellaf")
 _SE_METHOD = "none (FedDSM inference not implemented yet)"
 _CLIP = 1e-8
 SCORE_LAMBDAS = np.logspace(-4, 2, 13)
+EXTRA_ESTIMANDS = ("FedDSM-clip",)
+_N_BINS = 10
 
 
 def estimate(df, estimand="FedDSM", **cfg):
@@ -77,8 +84,8 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
         model (default: those with more than two distinct values).
     interactions: "auto" (products while the basis has <= n_arm / 2 columns), True or
         False.
-    score: "ols" (least squares, the prespecified model) or "tuned" (fed_tuned); with
-        "tuned", `interactions` is ignored and extras gain score_basis_{arm},
+    score: "ols" (least squares, the prespecified model), "tuned" or "binned" (fed_tuned);
+        with the last two, `interactions` is ignored and extras gain score_basis_{arm},
         score_lambda_{arm}.
     seed: fold assignment (np.random.SeedSequence(seed)); for ps="khellaf" also
         passed to fed_ps.
@@ -87,15 +94,15 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
     interactions_0 / interactions_1.
     """
     estimands = list(dict.fromkeys(estimands))
-    unknown = set(estimands) - set(ESTIMANDS)
+    unknown = set(estimands) - set(ESTIMANDS) - set(EXTRA_ESTIMANDS)
     if unknown:
         raise NotImplementedError(f"estimands {sorted(unknown)} are not implemented")
     if target not in ("ATE", "ATT"):
         raise ValueError("target must be 'ATE' or 'ATT'")
     if ps not in PS_MODELS:
         raise ValueError(f"ps must be one of {PS_MODELS}")
-    if score not in ("ols", "tuned"):
-        raise ValueError("score must be 'ols' or 'tuned'")
+    if score not in ("ols", "tuned", "binned"):
+        raise ValueError("score must be 'ols', 'tuned' or 'binned'")
     start = time.perf_counter()
     x_cols = sorted((c for c in df.columns if c[0] == "X" and c[1:].isdigit()),
                     key=lambda c: int(c[1:]))
@@ -146,12 +153,20 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
 
     fold_seed = np.random.SeedSequence(seed).generate_state(2)
     mu = {}
+    edges = None
     extras["ps_iterations"] = iters
     for arm in ((0,) if target == "ATT" else (0, 1)):
-        if score == "tuned":
+        if score in ("tuned", "binned"):
             Dm = D if ps == "site" else None
-            B = _basis(Xa, quad, Dm, interactions=True)
-            blocks = _score_blocks(Xa.shape[1], len(quad), 0 if Dm is None else Dm.shape[1])
+            m_ = 0 if Dm is None else Dm.shape[1]
+            if score == "binned":
+                if edges is None:
+                    edges = _bin_edges(Xa[:, quad])
+                B = _basis_binned(Xa, quad, Dm, edges)
+                blocks = _score_blocks(Xa.shape[1], len(quad), m_, sum(map(len, edges)))
+            else:
+                B = _basis(Xa, quad, Dm, interactions=True)
+                blocks = _score_blocks(Xa.shape[1], len(quad), m_)
             mu[arm], _, info = fed_tuned(B, Ya, Wa, Ha, arm, seed=int(fold_seed[arm]),
                                          blocks=blocks, folds=folds)
             extras[f"n_basis_{arm}"], extras[f"interactions_{arm}"] = (
@@ -168,7 +183,14 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
         extras[f"n_basis_{arm}"], extras[f"interactions_{arm}"] = B.shape[1], bool(use_int)
 
     results = {}
-    if any(e_.startswith("FedDSM") for e_ in estimands):
+    if "FedDSM-clip" in estimands:
+        mu_c = {arm: np.clip(m, Ya[Wa == arm].min(), Ya[Wa == arm].max()) for arm, m in mu.items()}
+        taus_c, w_c = _match(lp, mu_c, Wa, Ya, Ha, target, M)
+        bal_c = smd(pd.DataFrame(conf), Wa, w_c).abs()
+        results["FedDSM-clip"] = dict(tau=float(taus_c["quad"]), se=float("nan"), se_method=_SE_METHOD,
+                                      max_smd=float(bal_c.max()),
+                                      **_balance_extras(bal_c, Xa.shape[1], ps), **extras)
+    if any(e_ in ("FedDSM", "FedDSM-noBA") for e_ in estimands):
         taus, unit_w = _match(lp, mu, Wa, Ya, Ha, target, M)
         bal = smd(pd.DataFrame(conf), Wa, unit_w).abs()
         for name, key in (("FedDSM", "quad"), ("FedDSM-noBA", "none")):
@@ -246,14 +268,38 @@ def fed_quad(B, Y, W, H, arm, seed, folds=5):
     return pred, fold
 
 
-def _score_blocks(d, q, m):
-    """Column indices of the nested bases within _basis(interactions=True), in order of
-    size (a tie in held-out error goes to the simpler one)."""
+def _bin_edges(C, bins=_N_BINS):
+    """Interior quantile edges of each column of C (repeated values merged)."""
+    probs = np.arange(1, bins) / bins
+    return [e[e < c.max()] for c in C.T for e in [np.unique(np.quantile(c, probs))]]
+
+
+def _basis_binned(X, quad, D, edges):
+    """_basis(interactions=True) with threshold indicators 1{x > edge} inserted after
+    the products: X, squares, products, thresholds, site indicators, intercept."""
+    base = _basis(X, quad, None, interactions=True)[:, :-1]
+    th = [(X[:, j] > e).astype(float) for j, es in zip(quad, edges) for e in es]
+    cols = [base] + ([np.column_stack(th)] if th else [])
+    if D is not None:
+        cols.append(D)
+    cols.append(np.ones((len(X), 1)))
+    return np.column_stack(cols)
+
+
+def _score_blocks(d, q, m, n_bins=None):
+    """Column indices of the nested bases within _basis(interactions=True) (or
+    _basis_binned when n_bins is given), smaller first (a tie in held-out error goes to
+    the earlier one)."""
     n_prod = q * (q - 1) // 2
     x, sq, prod = np.arange(d), np.arange(d, d + q), np.arange(d + q, d + q + n_prod)
-    rest = np.arange(d + q + n_prod, d + q + n_prod + m + 1)  # site indicators, intercept
-    return {"main": np.r_[x, rest], "squares": np.r_[x, sq, rest],
-            "quad": np.r_[x, sq, prod, rest]}
+    nb = n_bins or 0
+    bins = np.arange(d + q + n_prod, d + q + n_prod + nb)
+    rest = np.arange(d + q + n_prod + nb, d + q + n_prod + nb + m + 1)  # site indicators, intercept
+    blocks = {"main": np.r_[x, rest], "squares": np.r_[x, sq, rest]}
+    if n_bins is not None:
+        blocks["bins"] = np.r_[x, bins, rest]
+    blocks["quad"] = np.r_[x, sq, prod, rest]
+    return blocks
 
 
 def _ridge_path(G, g, lams):
