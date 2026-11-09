@@ -1,0 +1,17 @@
+dataset,scenario,arm,ps,sites,covariates,cells,cells_n0,cells_n1,cells_n2,cells_n3_4,cells_n5_9,cells_n10plus,min_nonempty_cell,cells_below_basis_size,prognostic_terms,prognostic_numbers_per_site,ps_params,newton_iterations,ps_numbers_per_site,score_values_per_site
+Authors' DGPs,A_no,0,x,3,10,15,0,0,0,0,0,15,65,1,66,11385,11,6,462,1950
+Authors' DGPs,A_no,1,x,3,10,15,5,0,0,0,0,10,51,10,66,11385,11,6,462,2600
+Authors' DGPs,A_poor,0,x,3,10,15,0,0,0,0,0,15,67,0,66,11385,11,6,462,1950
+Authors' DGPs,A_poor,1,x,3,10,15,0,0,0,0,5,10,8,15,66,11385,11,6,462,2600
+Authors' DGPs,A_good,0,x,3,10,15,0,0,0,0,0,15,61,5,66,11385,11,5,385,1950
+Authors' DGPs,A_good,1,x,3,10,15,0,0,0,0,0,15,44,10,66,11385,11,5,385,2600
+Authors' DGPs,B_no,0,x,3,10,15,0,0,0,0,0,15,76,0,66,11385,11,6,462,3999
+Authors' DGPs,B_no,1,x,3,10,15,5,0,0,0,0,10,125,0,66,11385,11,6,462,5332
+Authors' DGPs,B_poor,0,x,3,10,15,0,0,0,0,0,15,77,0,66,11385,11,6,462,3999
+Authors' DGPs,B_poor,1,x,3,10,15,0,0,0,0,0,15,75,0,66,11385,11,6,462,5332
+Authors' DGPs,B_good,0,x,3,10,15,0,0,0,0,0,15,78,0,66,11385,11,5,385,3999
+Authors' DGPs,B_good,1,x,3,10,15,0,0,0,0,0,15,126,0,66,11385,11,5,385,5332
+IHDP,IHDP,0,site,8,18,40,0,0,0,0,0,40,10,40,47,5875,26,8,3016,279
+IHDP,IHDP,1,site,8,18,40,3,10,7,5,15,0,1,37,47,5875,26,8,3016,372
+ACIC 2016,acic01,0,x,4,79,20,0,0,0,0,0,20,186,20,1355,4600225,80,15,49800,3600
+ACIC 2016,acic01,1,x,4,79,20,0,0,0,0,0,20,37,20,130,43225,80,15,49800,4800

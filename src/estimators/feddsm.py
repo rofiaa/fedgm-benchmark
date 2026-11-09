@@ -208,11 +208,7 @@ def fed_quad(B, Y, W, H, arm, seed, folds=5):
     per-fold sufficient statistics (B'B, B'Y), cross-fitted with site-wise folds.
     Returns (predictions for every row, fold labels; -1 for the other arm)."""
     n, p = B.shape
-    rng = np.random.default_rng(seed)
-    fold = np.full(n, -1)
-    for k in np.unique(H):
-        rows = np.flatnonzero((W == arm) & (H == k))
-        fold[rows] = rng.permutation(len(rows)) % folds
+    fold = fold_labels(W, H, arm, seed, folds)
     G, g = np.zeros((folds, p, p)), np.zeros((folds, p))
     for k in np.unique(H):  # what site k sends: its per-fold B'B and B'Y
         for f in range(folds):
@@ -224,6 +220,18 @@ def fed_quad(B, Y, W, H, arm, seed, folds=5):
         beta = np.linalg.lstsq(G.sum(0) - G[f], g.sum(0) - g[f], rcond=None)[0]
         pred[fold == f] = B[fold == f] @ beta
     return pred, fold
+
+
+def fold_labels(W, H, arm, seed, folds=5):
+    """Cross-fitting folds: each site splits its arm-`arm` units into `folds` folds
+    (site order, one RNG); -1 for the other arm. These (site, arm, fold) cells are
+    what fed_quad's per-site sufficient statistics are computed over."""
+    rng = np.random.default_rng(seed)
+    fold = np.full(len(W), -1)
+    for k in np.unique(H):
+        rows = np.flatnonzero((W == arm) & (H == k))
+        fold[rows] = rng.permutation(len(rows)) % folds
+    return fold
 
 
 def _basis(X, quad, D=None, interactions=True):
