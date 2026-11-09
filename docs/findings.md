@@ -718,6 +718,35 @@ Primary PS per dataset, same folds as the quadratic FedDSM rows (paired).
   FedDSM's by more than 0.01; a larger increase is reported as harm.
 - *Blow-ups:* the number of ACIC ATE datasets with |err| > 2 (quadratic FedDSM: 8/1,540).
 
+**Result (script: `experiments/checks/feddsm_tuned_compare.py`).** Against the rule:
+*sums-only fixed bases are not enough*, and the no-harm check fails on one cell.
+
+| ACIC, mean per-setting RMSE | ATE | ATT |
+|---|---|---|
+| Quadratic FedDSM | 0.365 | 0.314 |
+| **Tuned FedDSM** | **0.340** | **0.286** |
+| Tuned FedDSM, no bias adj. | 0.305 | 0.297 |
+| Forest-score matching (centralized) | 0.189 | 0.136 |
+| Share of gap closed | **14%** | **16%** |
+
+- **Primary: under 25% on both estimands.** Paired change vs quadratic: ATE −0.025 ± 0.012
+  (better in 54/77), ATT −0.028 ± 0.005 (50/77). Still far from the forest score: +0.151 ±
+  0.034 (ATE), +0.150 ± 0.015 (ATT).
+- **Which model it picks:** "squares" in 96% of ACIC datasets, products in 2%, small penalty
+  (median λ/n 3×10⁻⁴). So the 1,355-term model was rarely useful, but removing it gains
+  little: the limit is the polynomial class on step/exponential surfaces.
+- **No-harm check: fails on IHDP ATT** (RMSE 0.312 → 0.333, +0.021 > 0.01; paired |err|
+  +0.005 ± 0.005). IHDP ATE improves (0.156 → 0.143). All 12 authors' DGP cells are within
+  ±0.003.
+- **Blow-ups not fixed:** ACIC ATE datasets with |err| > 2: 7/1,540 (was 8), largest 12.0
+  (was 14.4), same datasets mostly. All 7 are one-term-overlap settings. Without bias
+  adjustment none exceeds 2 (0/1,540), and their errors shrink (setting 69 rep 5: 0.89),
+  so the adjustment amplifies them; a polynomial extrapolating to poorly overlapped patients
+  is the likely cause (not tested). The forest score, which cannot extrapolate, has none.
+
+**Decision under the rule:** do not replace the default with score="tuned"; a richer
+sums-based basis (step 2) or an interactive model (step 3) is needed.
+
 ---
 
 ## Compatibility notes (no effect on results)

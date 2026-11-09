@@ -38,6 +38,10 @@ SOURCES = [  # (results dir, dataset, estimand, configs to drop, note)
     ("feddsm_ihdp", "IHDP", "ATE", [], ""),
     ("ihdp_att_cc", "IHDP", "ATT", [], ""),
     ("feddsm_ihdp_att", "IHDP", "ATT", [], ""),
+    ("feddsm_authors_tuned", "Authors' DGPs", "ATE", [], "post-hoc (N12)"),
+    ("feddsm_authors_tuned_att", "Authors' DGPs", "ATT", [], "post-hoc (N12)"),
+    ("feddsm_ihdp_tuned", "IHDP", "ATE", [], "post-hoc (N12)"),
+    ("feddsm_ihdp_tuned_att", "IHDP", "ATT", [], "post-hoc (N12)"),
 ]
 # primary FedDSM PS per dataset (from the dataset's confounding assumption)
 PRIMARY_PS = {"Authors' DGPs": "x", "IHDP": "site", "LaLonde": "x", "ACIC 2016": "x"}
@@ -51,6 +55,13 @@ EST = {"IPW-HT": "IPW-HT", "IPW-Hajek_pooled": "IPW-Hajek", "IPW-Hajek": "IPW-Ha
 def label(config, estimator):
     """(label, family, federated, headline key) for a (config_id, estimator) pair."""
     est = EST.get(estimator.removeprefix("ATT-"), estimator)
+    if config.startswith("feddsmt_"):
+        ps = config.removeprefix("feddsmt_")
+        name = {"FedDSM": "FedDSM", "FedDSM-noBA": "FedDSM (no bias adj.)",
+                "FedAIPW-quad": "Fed-AIPW (FedDSM's models)"}[estimator]
+        key = {"FedDSM": "feddsm_tuned", "FedDSM-noBA": "feddsm_tuned_noba",
+               "FedAIPW-quad": "fedaipw_tuned"}[estimator]
+        return f"{name} · tuned ridge score, post-hoc · {PS_NAME[ps]}", "FedDSM (ours)", "yes", f"{key}:{ps}"
     if config.startswith("feddsm_"):
         ps = config.removeprefix("feddsm_")
         name = {"FedDSM": "FedDSM", "FedDSM-noBA": "FedDSM (no bias adj.)",
@@ -99,6 +110,8 @@ def simulated():
     for d, dataset, estimand, drop, note in SOURCES:
         rows = load_rows(ROOT / "results" / d)
         rows = rows[~rows.config_id.isin(drop)]
+        if "tuned" in d:
+            rows = rows.assign(config_id=rows.config_id.str.replace("feddsm_", "feddsmt_"))
         for (scen, cfg, est), g in rows.groupby(["scenario", "config_id", "estimator"]):
             s = score(g)
             err = (g["tau"] - g["tau_true"])[np.isfinite(g["tau"])]
@@ -123,10 +136,13 @@ def acic():
     out = []
     for d, estimand in (("feddsm_acic", "ATE"), ("feddsm_acic_att", "ATT"),
                         ("feddsm_acic_flex", "ATE"), ("feddsm_acic_flex_att", "ATT"),
-                        ("feddsm_acic_dsmrf", "ATE"), ("feddsm_acic_dsmrf_att", "ATT")):
+                        ("feddsm_acic_dsmrf", "ATE"), ("feddsm_acic_dsmrf_att", "ATT"),
+                        ("feddsm_acic_tuned", "ATE"), ("feddsm_acic_tuned_att", "ATT")):
         rows = load_rows(ROOT / "results" / d)
         if "dsmrf" in d:  # AIPW-RF-rfps there is the same fit as in the flex run
             rows = rows[rows.estimator.str.startswith("DSM")]
+        if "tuned" in d:
+            rows = rows.assign(config_id=rows.config_id.str.replace("feddsm_", "feddsmt_"))
         rows = rows.assign(err=rows["tau"] - rows["tau_true"])
         for (cfg, est), g in rows.groupby(["config_id", "estimator"]):
             per = pd.DataFrame([score(x.drop(columns="err")) for _, x in g.groupby("scenario")])
