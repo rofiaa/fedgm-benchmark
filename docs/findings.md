@@ -650,8 +650,56 @@ Mean per-setting RMSE (median setting in brackets):
 - **Not like for like:** the RF references are centralized; FedDSM shares only sums.
   Forests are not available from sufficient statistics.
 
-**Not tested:** a centralized FedDSM with an RF prognostic score (would separate the
-outcome-model class from matching); clipped-logistic AIPW-RF.
+**Not tested:** clipped-logistic AIPW-RF. (The RF prognostic score: N11.)
+
+### N11. ACIC 2016: with a forest prognostic score, double-score matching beats AIPW RF + RF (2026-11-09)
+
+**Question.** Is FedDSM's gap to AIPW RF + RF (N10) due to the outcome model or to
+matching on two scores? `flex_outcome.DSM_ESTIMANDS`: FedDSM's matching step (M = 4,
+Mahalanobis on the scores, same bias-adjustment form) with the forests as m̂; centralized.
+Configs `feddsm_acic_dsmrf{,_att}`, same 77 × 20 datasets and same forests as N10
+(AIPW-RF-rfps reproduces exactly). Script: `experiments/checks/acic_dsmrf_compare.py`.
+
+**Reading rule, fixed before the run:** share of FedDSM's paired RMSE gap to AIPW RF + RF
+(ATE 0.116, ATT 0.144) closed by DSM-RF-rfps. ≥ 75%: the outcome model was the limit;
+< 25%: matching itself costs accuracy. **Result: more than closed (ATE 141%, ATT 130%).**
+
+Mean per-setting RMSE (median setting):
+
+| Method | ATE | ATT |
+|---|---|---|
+| **DSM, RF score, logistic PS** | **0.189** (0.151) | 0.136 (0.129) |
+| **DSM, RF score, RF PS** | 0.201 (0.162) | **0.126** (0.117) |
+| AIPW RF + RF | 0.249 (0.211) | 0.169 (0.160) |
+| Regression only, RF | 0.307 (0.274) | 0.248 (0.239) |
+| FedDSM (quadratic score) | 0.365 (0.292) | 0.314 (0.305) |
+| Regression only, quadratic | 0.416 (0.346) | 0.316 (0.283) |
+
+- **Against AIPW RF + RF (paired, SE over settings):** DSM-RF ATE −0.060 ± 0.005 (72/77),
+  ATT −0.034 ± 0.004 (64/77); DSM-RF-rfps ATE −0.048 ± 0.004 (74/77), ATT −0.043 ± 0.003
+  (73/77).
+- **Matching now adds accuracy:** DSM-RF vs regression with the same forests: ATE
+  −0.118 ± 0.007, ATT −0.112 ± 0.007 (76/77 each). With the quadratic model it ties on the
+  ATT and gains 0.051 on the ATE (N10). So matching's value depends on the score.
+- **The logistic PS is enough:** DSM-RF vs DSM-RF-rfps: ATE −0.012 ± 0.004, ATT +0.010 ±
+  0.003. The PS FedDSM can already federate exactly costs little; the outcome model is
+  the piece to improve.
+- **Blow-ups:** none with |err| > 2 for DSM-RF on the ATE (FedDSM: 8/1,540). Balance
+  ≤ 0.12: DSM-RF 54/77 (ATE), 77/77 (ATT).
+- **Bias adjustment adds little:** DSM-RF vs noBA: 0.189 vs 0.206 (ATE), 0.136 vs 0.142 (ATT).
+- **Not uniform:** with linear response surfaces (6 settings) the quadratic score is
+  better on the ATE (FedDSM 0.261 vs 0.281) and worse on the ATT (0.248 vs 0.156). On
+  IHDP's ATT the forest score was worse than the quadratic one (0.417 vs 0.321,
+  `experiments/checks/ihdp_dsm.py`).
+
+**Score accuracy** (`experiments/checks/acic_score_quality.py`, replication 0 per setting):
+R² of m̂₀ against the true mu.0 on the treated: quadratic mean 0.55 (min −0.85), forest
+0.85. Held-out R² on controls tracks that true accuracy (Spearman 0.92 for the quadratic
+score). The held-out gap to the forest predicts FedDSM's loss only moderately (ρ 0.46).
+
+**Limits.** Centralized; the forests are not available from one-round sums. One untuned
+forest; AIPW RF + RF is the only flexible reference (not the best ACIC competitors). No
+SE for matching. 20 replications. ACIC's response surfaces are mostly step/exponential.
 
 ---
 

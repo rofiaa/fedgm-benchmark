@@ -81,7 +81,11 @@ def label(config, estimator):
                 "AIPW-RF-norm": "AIPW · RF outcome, logistic PS, normalized",
                 "AIPW-RF-rfps": "AIPW · RF outcome + RF PS",
                 "REG-RF": "Outcome regression · RF",
-                "REG-quad": "Outcome regression · FedDSM's quadratic model"}[estimator]
+                "REG-quad": "Outcome regression · FedDSM's quadratic model",
+                "DSM-RF": "Double-score matching · RF score, logistic PS",
+                "DSM-RF-noBA": "Double-score matching · RF score, logistic PS (no bias adj.)",
+                "DSM-RF-rfps": "Double-score matching · RF score, RF PS",
+                "DSM-RF-rfps-noBA": "Double-score matching · RF score, RF PS (no bias adj.)"}[estimator]
         return name, "Centralized flexible", "no", f"flex_{estimator}"
     if config == "gm_xps":
         name = {"GM": "GenMatch", "GM-BA": "GenMatch + BA", "Maha": "Mahalanobis",
@@ -118,8 +122,11 @@ def acic():
     """One row per method: score() per setting, averaged over the 77 settings."""
     out = []
     for d, estimand in (("feddsm_acic", "ATE"), ("feddsm_acic_att", "ATT"),
-                        ("feddsm_acic_flex", "ATE"), ("feddsm_acic_flex_att", "ATT")):
+                        ("feddsm_acic_flex", "ATE"), ("feddsm_acic_flex_att", "ATT"),
+                        ("feddsm_acic_dsmrf", "ATE"), ("feddsm_acic_dsmrf_att", "ATT")):
         rows = load_rows(ROOT / "results" / d)
+        if "dsmrf" in d:  # AIPW-RF-rfps there is the same fit as in the flex run
+            rows = rows[rows.estimator.str.startswith("DSM")]
         rows = rows.assign(err=rows["tau"] - rows["tau_true"])
         for (cfg, est), g in rows.groupby(["config_id", "estimator"]):
             per = pd.DataFrame([score(x.drop(columns="err")) for _, x in g.groupby("scenario")])
