@@ -6,6 +6,8 @@ Sources (all committed results; nothing is rerun):
   Authors' DGPs, ATT: results/feddsm_authors_att
   IHDP (100 replications), ATE: results/ihdp_mc, results/feddsm_ihdp
   IHDP, ATT: results/ihdp_att_cc, results/feddsm_ihdp_att
+  ACIC 2016 (77 settings x 20 replications), ATE and ATT: results/feddsm_acic{,_att};
+      one row per method, the metrics averaged over the 77 settings (scenario "All 77")
   LaLonde (one sample each; error vs the experimental benchmark): results/checks/
       lalonde_ps.csv, lalonde_feddsm.csv, and genmatch-lalonde's GenMatch estimates.
 Metrics per (dataset, estimand, scenario, method): experiments/summarize.score (bias,
@@ -38,7 +40,7 @@ SOURCES = [  # (results dir, dataset, estimand, configs to drop, note)
     ("feddsm_ihdp_att", "IHDP", "ATT", [], ""),
 ]
 # primary FedDSM PS per dataset (from the dataset's confounding assumption)
-PRIMARY_PS = {"Authors' DGPs": "x", "IHDP": "site", "LaLonde": "x"}
+PRIMARY_PS = {"Authors' DGPs": "x", "IHDP": "site", "LaLonde": "x", "ACIC 2016": "x"}
 LALONDE_GM = "/Users/chensirong/Documents/casual_analysis+federated_learning/genmatch-lalonde"
 
 PS_NAME = {"x": "PS on covariates", "site": "site-aware PS", "khellaf": "paper's federated PS"}
@@ -105,6 +107,30 @@ def simulated():
     return pd.DataFrame(out)
 
 
+def acic():
+    """One row per method: score() per setting, averaged over the 77 settings."""
+    out = []
+    for d, estimand in (("feddsm_acic", "ATE"), ("feddsm_acic_att", "ATT")):
+        rows = load_rows(ROOT / "results" / d)
+        rows = rows.assign(err=rows["tau"] - rows["tau_true"])
+        for (cfg, est), g in rows.groupby(["config_id", "estimator"]):
+            per = pd.DataFrame([score(x.drop(columns="err")) for _, x in g.groupby("scenario")])
+            lab, fam, fed, key = label(cfg, est)
+            ok = g[np.isfinite(g["err"])]
+            out.append(dict(
+                dataset="ACIC 2016", estimand=estimand, scenario="All 77", config_id=cfg,
+                estimator=est, label=lab, family=fam, federated=fed, key=key,
+                note="mean over 77 settings", n_reps=len(g), n_undefined=int(per.n_undefined.sum()),
+                bias=per.bias.mean(), bias_mcse=per.bias.std() / np.sqrt(len(per)),
+                rmse=per.rmse.mean(), mae=float(ok.groupby("scenario").err.apply(lambda e: e.abs().mean()).mean()),
+                median_abs_err=float(ok.groupby("scenario").err.apply(lambda e: e.abs().median()).mean()),
+                emp_sd=per.emp_sd.mean(), se_ratio=per.se_if_ratio.mean(), coverage=per.cov_if.mean(),
+                ci_width=per.width_if.mean(), coverage_boot=np.nan, n_boot_reps=np.nan,
+                max_smd=per.mean_max_smd.mean(), runtime_s=per.mean_config_runtime_s.mean(),
+                source=f"results/{d}"))
+    return pd.DataFrame(out)
+
+
 def lalonde():
     bench = 1794.343
     ps = pd.read_csv(ROOT / "results/checks/lalonde_ps.csv")
@@ -148,7 +174,7 @@ def lalonde():
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    df = pd.concat([simulated(), lalonde()], ignore_index=True)
+    df = pd.concat([simulated(), acic(), lalonde()], ignore_index=True)
     df["primary"] = df.apply(
         lambda r: (not str(r.key).startswith(("feddsm", "fedaipw_quad")))
         or str(r.key).endswith(":" + PRIMARY_PS[r.dataset]), axis=1)

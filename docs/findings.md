@@ -571,6 +571,53 @@ Matching across sites (M = 4, quadratic BA, prespecified).
 - **What matters next** is data where the quadratic model is misspecified (ACIC 2016),
   where IHDP suggested FedDSM is more robust than AIPW with the same model.
 
+### N9. FedDSM on ACIC 2016: clear win on the ATT; on the ATE, wins but with outcome-model blow-ups
+
+`experiments/configs/feddsm_acic{,_att}.py` → `results/feddsm_acic{,_att}`.
+
+**Setup.**
+- All 77 settings × the competition's replications 1–20; 4 sites assigned from X; 79
+  covariates.
+- FedDSM settings fixed beforehand (M = 4, covariate-only PS, quadratic prognostic
+  model with the products-only-if-basis ≤ n_arm/2 rule, same-model bias adjustment).
+- Truth: noiseless SATT/ATE per replication.
+- 3,080 datasets, 0 errors.
+
+**RMSE, mean over the 77 settings (paired |err|, FedDSM minus competitor ± SE over settings):**
+
+| | ATT | vs FedDSM | ATE | vs FedDSM |
+|---|---|---|---|---|
+| FedDSM | 0.314 | — | 0.365 (median setting 0.292) | — |
+| FedDSM, no bias adjustment | 0.328 | −0.014 ± 0.001 | 0.319 | −0.007 ± 0.010 |
+| Fed-AIPW, paper (FedAvg) | 0.684 | −0.287 ± 0.021 | 0.799 | −0.295 ± 0.035 |
+| Fed-AIPW, NN membership | 0.703 | −0.298 ± 0.024 | 0.843 | −0.309 ± 0.037 |
+| Meta-SW AIPW | 0.673 | −0.288 ± 0.022 | 0.967 | −0.338 ± 0.052 |
+| Pooled PS AIPW | 0.721 | −0.307 ± 0.024 | 0.794 | −0.303 ± 0.030 |
+| Fed-AIPW with FedDSM's models | 0.698 (median 0.375) | −0.127 ± 0.033 | 1.857 (median 0.400) | −0.398 ± 0.156 |
+
+**Gates.**
+- ATT: lowest RMSE among the non-FedDSM comparators in 77/77 settings; RMSE ≤ Fed-AIPW
+  with FedDSM's models in 58/77; max |SMD| ≤ 0.12 in 77/77 (0.04–0.08).
+- ATE: RMSE ≤ the paper's Fed-AIPW in 74/77 and best comparator in 69/77; balance ≤ 0.12
+  in 55/77.
+
+**Knobs.** On the ATT the gain over the paper's Fed-AIPW holds at every level of every
+knob (overlap, % treated, treatment and response model, alignment, heterogeneity).
+
+**Weaknesses.**
+- **Bias-adjustment blow-ups on the ATE:** 8/1,540 datasets with |err| > 2 (largest 14.4
+  in setting 69; 1/1,540 without adjustment). The unstable step is the prognostic model:
+  Fed-AIPW with the same model also blows up there (3.30). The n_arm/2 rule allows up
+  to 1,355 terms on ≈ 3,000–4,000 controls (and fits the treated arm with many terms);
+  a smaller or regularized basis is the obvious candidate, to be reported as a post-hoc
+  change.
+- **No flexible-outcome comparator here.** All PS comparators use linear outcome
+  models (plus Fed-AIPW-quad). On IHDP, AIPW with a random forest was the best ATE
+  method. A centralized AIPW-RF comparator on ACIC is still needed before claiming
+  FedDSM beats flexible AIPW.
+- **Bias is still non-zero:** +0.11 on the ATT.
+- **20 replications per setting** (the competition has 100).
+
 ---
 
 ## Compatibility notes (no effect on results)
