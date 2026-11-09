@@ -50,6 +50,11 @@ Numbers sent per site, from `experiments/checks/feddsm_disclosure_audit.py`, rep
 | S6 estimate | v0 code: outcomes of matched pairs (pair differences) | individual outcomes | | |
 | S7 balance | weighted covariate means by arm | aggregates | | |
 
+**Addition if score="tuned" is adopted (docs/findings.md N12):** one more number per
+(site, arm, fold) cell, Y′Y, and the full product basis for both arms (B′B of up to
+q = 1,355 columns also for the treated arm on ACIC). Y′Y with n = 1 gives |Y|. Not yet
+audited.
+
 ## 4. What v0 discloses (audit results)
 
 | ID | Disclosure | Evidence |

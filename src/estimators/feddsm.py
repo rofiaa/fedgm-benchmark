@@ -38,6 +38,13 @@ counterparts (ATE: any single-arm site; ATT: a treated-only site); control-only 
 drop out of the ATT (they can never be matched). Undefined -> tau NaN with
 `undefined_reason`.
 
+score="tuned" (post-hoc, docs/findings.md N12; default "ols" is the prespecified model):
+the prognostic model is chosen per arm over basis x ridge penalty by held-out squared
+error, from the same per-site, per-fold sums plus Y'Y per cell (fed_tuned). Bases: main
+effects, + squares, + products; lambda / n on standardized columns in SCORE_LAMBDAS; the
+intercept is not penalized. A unit's score still excludes its fold's outcomes, except
+through this one choice of (basis, lambda).
+
 No standard error yet (se = NaN): matching on estimated scores needs an adjusted
 variance; inference is future work.
 """
@@ -55,6 +62,7 @@ ESTIMANDS = ("FedDSM", "FedDSM-noBA", "FedAIPW-quad")
 PS_MODELS = ("x", "site", "khellaf")
 _SE_METHOD = "none (FedDSM inference not implemented yet)"
 _CLIP = 1e-8
+SCORE_LAMBDAS = np.logspace(-4, 2, 13)
 
 
 def estimate(df, estimand="FedDSM", **cfg):
@@ -62,13 +70,16 @@ def estimate(df, estimand="FedDSM", **cfg):
 
 
 def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
-                   quad_cols=None, seed=None, interactions="auto"):
+                   quad_cols=None, seed=None, interactions="auto", score="ols"):
     """{estimand: result}. df: X1..Xd, H (sites 0..K-1), W, Y.
 
     quad_cols: covariates whose squares and pairwise products enter the prognostic
         model (default: those with more than two distinct values).
     interactions: "auto" (products while the basis has <= n_arm / 2 columns), True or
         False.
+    score: "ols" (least squares, the prespecified model) or "tuned" (fed_tuned); with
+        "tuned", `interactions` is ignored and extras gain score_basis_{arm},
+        score_lambda_{arm}.
     seed: fold assignment (np.random.SeedSequence(seed)); for ps="khellaf" also
         passed to fed_ps.
     Extras: target, ps_model, M, max_smd_x, max_smd_site (when ps="site"),
@@ -83,6 +94,8 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
         raise ValueError("target must be 'ATE' or 'ATT'")
     if ps not in PS_MODELS:
         raise ValueError(f"ps must be one of {PS_MODELS}")
+    if score not in ("ols", "tuned"):
+        raise ValueError("score must be 'ols' or 'tuned'")
     start = time.perf_counter()
     x_cols = sorted((c for c in df.columns if c[0] == "X" and c[1:].isdigit()),
                     key=lambda c: int(c[1:]))
@@ -135,6 +148,17 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
     mu = {}
     extras["ps_iterations"] = iters
     for arm in ((0,) if target == "ATT" else (0, 1)):
+        if score == "tuned":
+            Dm = D if ps == "site" else None
+            B = _basis(Xa, quad, Dm, interactions=True)
+            blocks = _score_blocks(Xa.shape[1], len(quad), 0 if Dm is None else Dm.shape[1])
+            mu[arm], _, info = fed_tuned(B, Ya, Wa, Ha, arm, seed=int(fold_seed[arm]),
+                                         blocks=blocks, folds=folds)
+            extras[f"n_basis_{arm}"], extras[f"interactions_{arm}"] = (
+                len(blocks[info["basis"]]), info["basis"] == "quad")
+            extras[f"score_basis_{arm}"], extras[f"score_lambda_{arm}"] = (
+                info["basis"], info["lambda"])
+            continue
         n_arm = int((Wa == arm).sum())  # an aggregate the sites can share
         use_int = interactions
         if interactions == "auto":
@@ -220,6 +244,68 @@ def fed_quad(B, Y, W, H, arm, seed, folds=5):
         beta = np.linalg.lstsq(G.sum(0) - G[f], g.sum(0) - g[f], rcond=None)[0]
         pred[fold == f] = B[fold == f] @ beta
     return pred, fold
+
+
+def _score_blocks(d, q, m):
+    """Column indices of the nested bases within _basis(interactions=True), in order of
+    size (a tie in held-out error goes to the simpler one)."""
+    n_prod = q * (q - 1) // 2
+    x, sq, prod = np.arange(d), np.arange(d, d + q), np.arange(d + q, d + q + n_prod)
+    rest = np.arange(d + q + n_prod, d + q + n_prod + m + 1)  # site indicators, intercept
+    return {"main": np.r_[x, rest], "squares": np.r_[x, sq, rest],
+            "quad": np.r_[x, sq, prod, rest]}
+
+
+def _ridge_path(G, g, lams):
+    """Ridge coefficients (one column per lambda) from B'B and B'Y alone. The last column
+    of B is the intercept (unpenalized); the others are centred and scaled to unit
+    variance from the same sums; the penalty is lambda * n * ||scaled beta||^2."""
+    n = G[-1, -1]
+    xbar, ybar = G[:-1, -1] / n, g[-1] / n
+    Gc = G[:-1, :-1] - n * np.outer(xbar, xbar)
+    gc = g[:-1] - n * xbar * ybar
+    sd = np.sqrt(np.maximum(np.diag(Gc), 0) / n)
+    sd[sd < 1e-12] = np.inf  # constant in this training set: coefficient 0
+    s, V = np.linalg.eigh(Gc / np.outer(sd, sd))
+    a = V.T @ (gc / sd)
+    beta = (V @ (a[:, None] / (np.maximum(s, 0)[:, None] + n * lams[None, :]))) / sd[:, None]
+    return np.vstack([beta, ybar - xbar @ beta])
+
+
+def fed_tuned(B, Y, W, H, arm, seed, blocks, folds=5, lams=SCORE_LAMBDAS):
+    """Ridge prognostic model of arm `arm`, choosing (basis, lambda) by held-out squared
+    error over the folds. Uses only per-site, per-fold sums: B'B, B'Y and Y'Y. B's last
+    column must be the intercept and every block must end with it. Returns (predictions
+    for every row, fold labels, {"basis", "lambda", "heldout_mse"}); units of the arm get
+    the fit without their fold, the other arm the full fit."""
+    fold = fold_labels(W, H, arm, seed, folds)
+    p = B.shape[1]
+    G, g, yy = np.zeros((folds, p, p)), np.zeros((folds, p)), np.zeros(folds)
+    for k in np.unique(H):  # what site k sends
+        for f in range(folds):
+            r = (H == k) & (fold == f)
+            G[f] += B[r].T @ B[r]
+            g[f] += B[r].T @ Y[r]
+            yy[f] += Y[r] @ Y[r]
+    Gt, gt = G.sum(0), g.sum(0)
+    best = dict(err=np.inf)
+    for name, idx in blocks.items():
+        ix = np.ix_(idx, idx)
+        fits, err = [], np.zeros(len(lams))
+        for f in range(folds):
+            b = _ridge_path((Gt - G[f])[ix], (gt - g[f])[idx], lams)
+            err += yy[f] - 2 * g[f, idx] @ b + np.sum(b * (G[f][ix] @ b), axis=0)
+            fits.append(b)
+        j = int(np.argmin(err))
+        if err[j] < best["err"]:
+            best = dict(err=float(err[j]), name=name, idx=idx, j=j, fits=fits)
+    idx, j = best["idx"], best["j"]
+    pred = B[:, idx] @ _ridge_path(Gt[np.ix_(idx, idx)], gt[idx], lams[[j]])[:, 0]
+    for f in range(folds):
+        pred[fold == f] = B[fold == f][:, idx] @ best["fits"][f][:, j]
+    n_arm = int(Gt[-1, -1])
+    return pred, fold, dict(basis=best["name"], **{"lambda": float(lams[j])},
+                            heldout_mse=best["err"] / n_arm)
 
 
 def fold_labels(W, H, arm, seed, folds=5):

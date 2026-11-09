@@ -701,6 +701,23 @@ score). The held-out gap to the forest predicts FedDSM's loss only moderately (�
 forest; AIPW RF + RF is the only flexible reference (not the best ACIC competitors). No
 SE for matching. 20 replications. ACIC's response surfaces are mostly step/exponential.
 
+### N12. FedDSM with a tuned sums-only prognostic score (post-hoc; rule fixed before the run, 2026-11-09)
+
+**Change.** `feddsm.estimate_multi(score="tuned")`: per arm, ridge over basis (main /
++ squares / + products) × λ, chosen by held-out squared error from per-site, per-fold
+sums (B′B, B′Y, plus Y′Y per cell: new shared number; see `docs/feddsm_protocol.md`).
+One round, like the original. Post-hoc: motivated by N10/N11, to be labelled so.
+Primary PS per dataset, same folds as the quadratic FedDSM rows (paired).
+
+**Rule fixed before the run.**
+- *Primary, ACIC:* share of the RMSE gap between quadratic FedDSM and centralized
+  forest-score matching (DSM-RF; ATE 0.365 → 0.189, ATT 0.314 → 0.136) closed by tuned
+  FedDSM. ≥ 50% on both estimands: sums-only is enough, steps 2–3 are not needed. Under 25%
+  on either: sums-only fixed bases are not enough. Otherwise partial.
+- *No harm:* RMSE on any authors' DGP cell or on IHDP (ATE, ATT) must not exceed quadratic
+  FedDSM's by more than 0.01; a larger increase is reported as harm.
+- *Blow-ups:* the number of ACIC ATE datasets with |err| > 2 (quadratic FedDSM: 8/1,540).
+
 ---
 
 ## Compatibility notes (no effect on results)

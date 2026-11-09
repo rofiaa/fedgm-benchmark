@@ -115,3 +115,59 @@ def test_outcome_local_estimate_equals_pair_differences(est):
         target = W == (1 if est == "ATT" else 0)
         np.testing.assert_allclose(u[target], 1.0)   # every target unit's weights sum to 1
         assert (u[~target] == 0).all() and (K[target] == 0).all()
+
+
+def _tuned_data(linear, n=2500, seed=0):
+    rng = np.random.default_rng(seed)
+    X = rng.normal(size=(n, 6))
+    H, W = rng.integers(0, 3, n), rng.binomial(1, 0.4, n)
+    Y = X[:, 0] + (0 if linear else 2 * X[:, 0] * X[:, 1]) + rng.normal(size=n)
+    return X, H, W, Y
+
+
+def test_ridge_path_is_centralized_ridge():
+    X, H, W, Y = _tuned_data(False, n=400)
+    B = feddsm._basis(X, list(range(6)))
+    lam = np.array([0.01, 1.0])
+    b = feddsm._ridge_path(B.T @ B, B.T @ Y, lam)
+    A = B[:, :-1]
+    sd, Ac = A.std(0), A - A.mean(0)
+    for j, l in enumerate(lam):
+        Z = Ac / sd
+        beta = np.linalg.solve(Z.T @ Z + len(Y) * l * np.eye(Z.shape[1]), Z.T @ (Y - Y.mean())) / sd
+        np.testing.assert_allclose(b[:-1, j], beta, rtol=1e-8, atol=1e-8)
+        np.testing.assert_allclose(b[-1, j], Y.mean() - A.mean(0) @ beta, rtol=1e-8)
+
+
+def test_tuned_heldout_error_and_folds_match_direct_computation():
+    X, H, W, Y = _tuned_data(False)
+    B = feddsm._basis(X, list(range(6)))
+    blocks = feddsm._score_blocks(6, 6, 0)
+    pred, fold, info = feddsm.fed_tuned(B, Y, W, H, 0, seed=2, blocks=blocks)
+    r = W == 0
+    assert info["heldout_mse"] == pytest.approx(np.mean((Y[r] - pred[r]) ** 2), rel=1e-8)
+    idx, lam = blocks[info["basis"]], np.array([info["lambda"]])
+    for f in range(5):  # no unit's own fold enters its prediction
+        tr = r & (fold != f)
+        b = feddsm._ridge_path(B[tr][:, idx].T @ B[tr][:, idx], B[tr][:, idx].T @ Y[tr], lam)[:, 0]
+        np.testing.assert_allclose(pred[fold == f], B[fold == f][:, idx] @ b, rtol=1e-8)
+
+
+@pytest.mark.parametrize("linear,expected", [(True, "main"), (False, "quad")])
+def test_tuned_selects_the_right_basis(linear, expected):
+    X, H, W, Y = _tuned_data(linear)
+    B = feddsm._basis(X, list(range(6)))
+    _, _, info = feddsm.fed_tuned(B, Y, W, H, 0, seed=2, blocks=feddsm._score_blocks(6, 6, 0))
+    assert info["basis"] == expected
+
+
+@pytest.mark.parametrize("target,idx", [("ATE", 1), ("ATT", 2)])
+def test_tuned_score_estimates(target, idx):
+    df, *truth = _sites_data()
+    res = feddsm.estimate_multi(df, list(feddsm.ESTIMANDS), target=target, seed=1, score="tuned")
+    for out in res.values():
+        check_result(out)
+        assert out["score_basis_0"] in ("main", "squares", "quad")
+    assert abs(res["FedDSM"]["tau"] - truth[idx - 1]) < 0.2
+    with pytest.raises(ValueError):
+        feddsm.estimate_multi(df, target=target, score="nope")
