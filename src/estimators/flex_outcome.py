@@ -19,7 +19,13 @@ Estimands (target "ATE" or "ATT"):
   "REG-RF"         regression only with the forests.
   "REG-quad"       regression only with FedDSM's quadratic prognostic model
                    (feddsm.fed_quad, same interaction rule).
-se: influence-function SE with nuisances fixed for the AIPW variants; NaN for regression.
+  Not in the default list (DSM_ESTIMANDS, docs/findings.md N11): double-score matching
+  with FedDSM's matching step (feddsm._match: Mahalanobis, M = 4) but the forests as
+  prognostic scores and bias adjustment.
+  "DSM-RF", "DSM-RF-noBA"             logistic PS (FedDSM's), forest prognostic scores.
+  "DSM-RF-rfps", "DSM-RF-rfps-noBA"   forest PS (logit of the clipped OOB probability).
+se: influence-function SE with nuisances fixed for the AIPW variants; NaN for regression
+and matching.
 """
 
 import time
@@ -29,9 +35,11 @@ import pandas as pd
 
 from src.estimators.balance import smd
 from src.estimators.fed_ps import _att_terms, _if_se
-from src.estimators.feddsm import _basis, fed_logistic_newton, fed_quad
+from src.estimators.feddsm import _basis, _match, fed_logistic_newton, fed_quad
 
 ESTIMANDS = ("AIPW-RF", "AIPW-RF-norm", "AIPW-RF-rfps", "REG-RF", "REG-quad")
+DSM_ESTIMANDS = ("DSM-RF", "DSM-RF-noBA", "DSM-RF-rfps", "DSM-RF-rfps-noBA")
+_DSM_M = 4  # FedDSM's prespecified M
 _CLIP = 1e-8
 
 
@@ -67,8 +75,9 @@ def _ate_norm(W, Y, e, mu):
 def estimate_multi(df, estimands=ESTIMANDS, target="ATE", seed=None):
     """{estimand: result}; df: X1..Xd, H, W, Y. Frozen keys plus estimand, target."""
     estimands = list(dict.fromkeys(estimands))
-    if set(estimands) - set(ESTIMANDS):
-        raise NotImplementedError(sorted(set(estimands) - set(ESTIMANDS)))
+    unknown = set(estimands) - set(ESTIMANDS) - set(DSM_ESTIMANDS)
+    if unknown:
+        raise NotImplementedError(sorted(unknown))
     if target not in ("ATE", "ATT"):
         raise ValueError("target must be 'ATE' or 'ATT'")
     if target == "ATT" and "AIPW-RF-norm" in estimands:
@@ -103,8 +112,19 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", seed=None):
                              if psi is not None else "none", max_smd=bal, estimand=name,
                              target=target)
 
+    matched = {}
+
+    def dsm(kind):
+        if kind not in matched:
+            e = ps(kind)
+            matched[kind] = _match(np.log(e / (1 - e)), mu, W, Y, H, target, _DSM_M)
+        return matched[kind]
+
     for name in estimands:
-        if name.startswith("AIPW"):
+        if name.startswith("DSM"):
+            taus, unit_w = dsm("rf" if "rfps" in name else "log")
+            add(name, taus["none" if name.endswith("noBA") else "quad"], weights=unit_w)
+        elif name.startswith("AIPW"):
             e = ps("rf" if name.endswith("rfps") else "log")
             if target == "ATT":
                 tau, _, psi = _att_terms(W, Y - mu[0], e, [np.ones(n, bool)], normalize=True)

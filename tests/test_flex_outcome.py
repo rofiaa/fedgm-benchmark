@@ -33,3 +33,21 @@ def test_att_rejects_norm():
     df, _, _ = _data(n=200)
     with pytest.raises(ValueError):
         flex_outcome.estimate_multi(df, ["AIPW-RF-norm"], target="ATT")
+
+
+@pytest.mark.parametrize("target", ["ATE", "ATT"])
+def test_dsm_rf(target):
+    df, ate, att = _data()
+    truth = ate if target == "ATE" else att
+    res = flex_outcome.estimate_multi(df, list(flex_outcome.DSM_ESTIMANDS), target=target, seed=1)
+    for name, out in res.items():
+        check_result(out)
+        assert np.isnan(out["se"]) and np.isfinite(out["max_smd"])
+    for name in ("DSM-RF", "DSM-RF-rfps"):  # no-BA versions keep the matching bias
+        assert abs(res[name]["tau"] - truth) < 0.35, (name, res[name]["tau"], truth)
+    assert res["DSM-RF"]["tau"] != res["DSM-RF-noBA"]["tau"]
+    assert res["DSM-RF"]["tau"] != res["DSM-RF-rfps"]["tau"]
+
+
+def test_dsm_not_in_defaults():
+    assert not set(flex_outcome.DSM_ESTIMANDS) & set(flex_outcome.ESTIMANDS)
