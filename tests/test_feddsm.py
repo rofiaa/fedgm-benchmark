@@ -79,3 +79,19 @@ def test_seed_reproducible():
     a = feddsm.estimate(df, target="ATT", seed=5)
     b = feddsm.estimate(df, target="ATT", seed=5)
     assert a["tau"] == b["tau"]
+
+
+def test_interaction_rule_keeps_products_on_small_bases():
+    """'auto' keeps the pairwise products whenever the basis has <= n_arm/2 columns
+    (true for the authors' DGPs and IHDP), and drops them otherwise."""
+    df, _, _ = _sites_data(n=600)
+    a = feddsm.estimate_multi(df, ["FedDSM"], target="ATE", seed=1)["FedDSM"]
+    b = feddsm.estimate_multi(df, ["FedDSM"], target="ATE", seed=1,
+                              interactions=True)["FedDSM"]
+    assert a["tau"] == b["tau"] and a["interactions_0"] and a["interactions_1"]
+    rng = np.random.default_rng(0)
+    wide = pd.DataFrame(rng.normal(size=(600, 40)), columns=[f"X{i}" for i in range(1, 41)])
+    wide = wide.assign(H=rng.integers(0, 2, 600), W=rng.binomial(1, 0.4, 600),
+                       Y=rng.normal(size=600))
+    c = feddsm.estimate_multi(wide, ["FedDSM"], target="ATT", seed=1)["FedDSM"]
+    assert not c["interactions_0"] and c["n_basis_0"] == 40 + 40 + 1

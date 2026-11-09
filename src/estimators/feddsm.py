@@ -12,7 +12,10 @@ statistics the sites can share:
           federated PS of fed_ps (local logistic ê_k, FedAvg membership weights).
   m̂_w(x): prognostic score for arm w: least squares on main effects, squares and
           pairwise products of the continuous covariates (+ site indicators when
-          ps="site") and an intercept, from summed per-site, per-fold B'B and B'Y:
+          ps="site") and an intercept -- the products only while this basis has at
+          most half as many columns as arm w has units (otherwise main effects +
+          squares; rule fixed before the ACIC 2016 run, and every earlier dataset
+          keeps its products), from summed per-site, per-fold B'B and B'Y:
           the exact pooled fit. Cross-fitted: each site splits its arm-w units into
           `folds` folds; a unit's score comes from the fit without its fold, so no
           unit's own outcome enters its score. Units of the other arm get the full fit.
@@ -59,15 +62,18 @@ def estimate(df, estimand="FedDSM", **cfg):
 
 
 def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
-                   quad_cols=None, seed=None):
+                   quad_cols=None, seed=None, interactions="auto"):
     """{estimand: result}. df: X1..Xd, H (sites 0..K-1), W, Y.
 
     quad_cols: covariates whose squares and pairwise products enter the prognostic
         model (default: those with more than two distinct values).
+    interactions: "auto" (products while the basis has <= n_arm / 2 columns), True or
+        False.
     seed: fold assignment (np.random.SeedSequence(seed)); for ps="khellaf" also
         passed to fed_ps.
     Extras: target, ps_model, M, max_smd_x, max_smd_site (when ps="site"),
-    undefined_reason, n_active, ps_iterations, n_basis.
+    undefined_reason, n_active, ps_iterations, n_basis_0 / n_basis_1,
+    interactions_0 / interactions_1.
     """
     estimands = list(dict.fromkeys(estimands))
     unknown = set(estimands) - set(ESTIMANDS)
@@ -125,11 +131,17 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
         e = np.clip(1 / (1 + np.exp(-lp)), _CLIP, 1 - _CLIP)
         lp = np.log(e / (1 - e))
 
-    B = _basis(Xa, quad, D if ps == "site" else None)
     fold_seed = np.random.SeedSequence(seed).generate_state(2)
-    mu = {arm: fed_quad(B, Ya, Wa, Ha, arm, seed=int(fold_seed[arm]), folds=folds)[0]
-          for arm in ((0,) if target == "ATT" else (0, 1))}
-    extras.update(ps_iterations=iters, n_basis=B.shape[1])
+    mu = {}
+    extras["ps_iterations"] = iters
+    for arm in ((0,) if target == "ATT" else (0, 1)):
+        n_arm = int((Wa == arm).sum())  # an aggregate the sites can share
+        use_int = interactions
+        if interactions == "auto":
+            use_int = _basis(Xa[:1], quad, None if ps != "site" else D[:1]).shape[1] <= n_arm / 2
+        B = _basis(Xa, quad, D if ps == "site" else None, interactions=bool(use_int))
+        mu[arm] = fed_quad(B, Ya, Wa, Ha, arm, seed=int(fold_seed[arm]), folds=folds)[0]
+        extras[f"n_basis_{arm}"], extras[f"interactions_{arm}"] = B.shape[1], bool(use_int)
 
     results = {}
     if any(e_.startswith("FedDSM") for e_ in estimands):
@@ -214,10 +226,12 @@ def fed_quad(B, Y, W, H, arm, seed, folds=5):
     return pred, fold
 
 
-def _basis(X, quad, D=None):
+def _basis(X, quad, D=None, interactions=True):
     C = X[:, quad]
     d = C.shape[1]
-    cols = [X, C**2] + [C[:, [i]] * C[:, [j]] for i in range(d) for j in range(i + 1, d)]
+    cols = [X, C**2]
+    if interactions:
+        cols += [C[:, [i]] * C[:, [j]] for i in range(d) for j in range(i + 1, d)]
     if D is not None:
         cols.append(D)
     cols.append(np.ones((len(X), 1)))
