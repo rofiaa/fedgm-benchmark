@@ -23,7 +23,7 @@ Add papers as they are read.
 | Han, Shen & Zubizarreta 2023 (arXiv:2309.12600) | multiply robust federated target ATE | MAE, RMSE over 500 sims (Tables 1–2) [V] | coverage and CI length [V]; closed-form variance | — | one round for the density-ratio step [V] | claim only, no metric [V] |
 | Koga et al. 2023 (arXiv:2310.06237) | DP multi-site ATE; exact matching within sites | MAE vs the non-private estimate and the truth [S] | DP variance [S] | — | — | (ε, δ)-DP; Laplace + smooth sensitivity [V]; utility vs privacy-budget ratio [S] |
 | Li, …, Toh 2019, *AJE* (PMC6438804) | distributed networks; PS *or* disease-risk-score matching within sites | agreement with the pooled individual-level analysis (estimates and CIs) [V] | meta-analytic and risk-set CIs [V] | — | what each site shares [V] | aggregate-only sharing (no metric) [V] |
-| Diamond & Sekhon 2013, *REStat* (GenMatch) | genetic matching | [N/A]: PDF not readable here | | | | |
+| Diamond & Sekhon 2013, *REStat* 95(3):932–945 (GenMatch) [V, PDF supplied by the user] | genetic matching; ATT, 1:1 with replacement, ties averaged (Sec. II.B) | Sim 1 (Setoguchi/Lee: 10 covariates, 7 PS scenarios A–G of increasing nonlinearity/non-additivity, linear outcome, n = 1,000 and 5,000, 1,000 datasets): absolute bias (% of the true effect) and RMSE (Table 1). Sim 2 (LaLonde-based: 185 treated / 260 controls, effect $1,000, outcome nonlinear in re74/re75, misspecified PS): bias %, RMSE and ratios to GenMatch (Table 2; GenMatch 4.32% / RMSE 512 vs logit PS matching 51.2% / 1,832). LaLonde: ATT vs the experimental benchmark (Table 3) | 95% CIs in the empirical example only (Table 3); none in the simulations | boxplots of the smallest p-value of paired t- and KS tests (Figs 3–4); fitness = lowest p-value; mentions SMD, eQQ, variance ratios | — | — |
 | Liu et al. 2025, *Ann Oper Res* (FPSM) | federated PS matching | [N/A]: paywalled | | | | |
 
 ## 2. Metrics the literature uses, and our coverage
@@ -38,7 +38,7 @@ Add papers as they are read.
 | 95% CI coverage | ACIC, Han, Yang & Zhang | ✓ PS methods (influence-function SE; bootstrap on reps 0–29), GenMatch (Abadie–Imbens SE); **✗ FedDSM (no SE yet)** |
 | CI width | ACIC, Han | as for coverage |
 | Covariate balance (max \|SMD\|) | Antonelli, Yang & Zhang, GenMatch | ✓ all estimators (weighted or matched sample) |
-| KS statistic, variance ratio | GenMatch tradition | ✗ (GenMatch's fitness uses KS internally) |
+| KS statistic, variance ratio | Diamond & Sekhon (KS p-values; variance ratios mentioned) | ✗ (GenMatch's fitness uses KS internally) |
 | Effective sample size | — | partly (GenMatch n_eff) |
 | Overlap diagnostics (PS distributions) | Khellaf | ✗ (scenarios are labelled by overlap level) |
 | Robustness across settings (overlap, nonlinearity, alignment) | ACIC | partly (3 overlap levels × 2 DGPs; IHDP) → ACIC 2016 next |
@@ -55,4 +55,36 @@ Add papers as they are read.
 2. Robustness across ACIC 2016 settings (misspecified outcome models).
 3. Communication accounting (rounds, numbers sent per site).
 4. Privacy metrics under a stated threat model.
-5. Read Diamond & Sekhon (2013) and FPSM in full when a readable copy is available.
+5. Read FPSM in full when a readable copy is available.
+
+## 4. Notes from Diamond & Sekhon (2013) relevant to our results
+
+- **Comparators were propensity-score matching variants only:** fixed logit, random
+  forest and boosted CART PS matching (Table 1–2). There was no weighting, no outcome
+  regression and no doubly robust estimator.
+  - GenMatch's published advantage is over PS matching.
+  - Our benchmark compares it with doubly robust federated weighting estimators that
+    have outcome models, a comparison the paper never made.
+- **Simulation 1's outcome is linear in X,** where matching discrepancy is mild.
+- **The authors say GenMatch "may or may not decrease the bias"** (Sec. II.B), that
+  there is "no claim that it is generally the best", and that it is "unclear how to
+  best measure the degree of covariate balance" (Sec. V). Their Fig. 5 shows reliable
+  LaLonde estimates "only at the highest fitness values".
+- **Their own LaLonde results vary a lot** (Table 3):
+
+  | Sample | GenMatch | Benchmark | Balance (fitness) |
+  |---|---|---|---|
+  | DW, CPS-1 | $1,734 | $1,794 | 0.21 |
+  | DW, PSID-1 | $1,045 | $1,794 | 0.029 |
+  | Early RA, CPS-1 | $1,631 | $2,748 | 0.46 |
+  | LaLonde sample, CPS-1 | $281 | $886 | 0.23 |
+
+  This matches our N6: an accurate result on CPS-1 is not a general advantage.
+- **Our genmatch-lalonde replication:**
+
+  | Sample | Ours | D&S |
+  |---|---|---|
+  | DW, CPS-1 | $1,698, fitness 0.134 | $1,734, fitness 0.21 |
+  | DW, PSID-1 | $400, fitness 0.003 | $1,045, fitness 0.029 |
+
+  D&S's search reached better balance on PSID-1.
