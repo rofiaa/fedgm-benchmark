@@ -76,6 +76,13 @@ def label(config, estimator):
     }
     if config in table:
         return table[config]
+    if config == "flex_ref":
+        name = {"AIPW-RF": "AIPW · RF outcome, logistic PS (unclipped)",
+                "AIPW-RF-norm": "AIPW · RF outcome, logistic PS, normalized",
+                "AIPW-RF-rfps": "AIPW · RF outcome + RF PS",
+                "REG-RF": "Outcome regression · RF",
+                "REG-quad": "Outcome regression · FedDSM's quadratic model"}[estimator]
+        return name, "Centralized flexible", "no", f"flex_{estimator}"
     if config == "gm_xps":
         name = {"GM": "GenMatch", "GM-BA": "GenMatch + BA", "Maha": "Mahalanobis",
                 "Maha-BA": "Mahalanobis + BA"}[estimator]
@@ -110,7 +117,8 @@ def simulated():
 def acic():
     """One row per method: score() per setting, averaged over the 77 settings."""
     out = []
-    for d, estimand in (("feddsm_acic", "ATE"), ("feddsm_acic_att", "ATT")):
+    for d, estimand in (("feddsm_acic", "ATE"), ("feddsm_acic_att", "ATT"),
+                        ("feddsm_acic_flex", "ATE"), ("feddsm_acic_flex_att", "ATT")):
         rows = load_rows(ROOT / "results" / d)
         rows = rows.assign(err=rows["tau"] - rows["tau_true"])
         for (cfg, est), g in rows.groupby(["config_id", "estimator"]):

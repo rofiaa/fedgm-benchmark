@@ -618,6 +618,41 @@ knob (overlap, % treated, treatment and response model, alignment, heterogeneity
 - **Bias is still non-zero:** +0.11 on the ATT.
 - **20 replications per setting** (the competition has 100).
 
+### N10. ACIC 2016: FedDSM does not beat flexible centralized AIPW (2026-11-09)
+
+Centralized references with random-forest nuisances (`src/estimators/flex_outcome.py`;
+300 trees, no tuning), same 77 settings × 20 replications as N9, paired on (setting, rep).
+Script: `experiments/checks/acic_flex_compare.py` → `results/checks/acic_flex_*.csv`.
+Mean per-setting RMSE (median setting in brackets):
+
+| Method | ATE | ATT | Federable? |
+|---|---|---|---|
+| AIPW, RF outcome + RF PS | **0.249** (0.211) | **0.169** (0.160) | no |
+| Regression only, RF | 0.307 (0.274) | 0.248 (0.239) | no |
+| **FedDSM** | 0.365 (0.292) | 0.314 (0.305) | yes |
+| FedDSM, no bias adj. | 0.319 (0.311) | 0.328 (0.319) | yes |
+| Regression only, FedDSM's quadratic model | 0.416 (0.346) | 0.316 (0.283) | yes |
+| Fed-AIPW (paper, FedAvg) | 0.799 (0.609) | 0.684 (0.671) | yes |
+
+- **FedDSM minus AIPW RF+RF (paired, SE over settings):** ATE RMSE +0.116 ± 0.042
+  (FedDSM better in 30/77 settings), ATT +0.144 ± 0.016 (8/77). The N9 claim "best
+  comparator" therefore holds only against the linear/quadratic comparators.
+- **Matching adds little beyond the outcome model.** Against regression with the same
+  quadratic model: ATT −0.002 ± 0.005 (tie); ATE −0.051 ± 0.007 (MAE −0.042 ± 0.004).
+- **Where FedDSM holds up:** linear response surfaces (6 of the 77 settings): better than
+  RF+RF in 6/6 on the ATE (RMSE 0.261 vs 0.417) and 3/6 on the ATT (0.248 vs 0.245); no
+  treatment-effect heterogeneity (2 settings), ATT 0.133 vs 0.195. It loses on step and
+  exponential responses, consistent with the quadratic model being the limit.
+- **AIPW-RF with the logistic PS is not a fair reference.** That PS is unclipped: largest
+  weights 3×10⁶ in setting 19 (rep 2, error 10,694), and 3 datasets are 97% of its
+  total absolute error (ATE RMSE 31.6, median setting 0.239). Clipped RF PS (OOB,
+  [0.01, 0.99]) removes this; the normalized version has ATE RMSE 0.399.
+- **Not like for like:** the RF references are centralized; FedDSM shares only sums.
+  Forests are not available from sufficient statistics.
+
+**Not tested:** a centralized FedDSM with an RF prognostic score (would separate the
+outcome-model class from matching); clipped-logistic AIPW-RF.
+
 ---
 
 ## Compatibility notes (no effect on results)
