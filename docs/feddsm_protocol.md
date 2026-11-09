@@ -59,7 +59,7 @@ Numbers sent per site, from `experiments/checks/feddsm_disclosure_audit.py`, rep
 | D3 | **Differencing.** Fold sums and full-arm fits, and per-site vs global sums, can be subtracted from each other to isolate groups. | structural |
 | D4 | **Repeated adaptive views in Newton:** the per-site gradient and Hessian at 5–15 different β. | structural |
 | D5 | **Patient-level scores and treatment** pass to the matcher. | structural (v0) |
-| D6 | **Matched-pair outcomes** cross sites in the pair-difference form. Avoidable (§5). | structural (v0) |
+| D6 | ~~**Matched-pair outcomes** cross sites in the pair-difference form.~~ **Resolved:** `feddsm._local_tau` computes the outcome-local form (§5 item 5). It equals the pair form exactly (`tests/test_feddsm.py`), and stored results reproduce to ≤ 1.4e-14. | fixed 2026-11-08 |
 | D7 | **Exact released aggregates** enable membership inference. | structural |
 
 ## 5. Proposed v1 (tier A)

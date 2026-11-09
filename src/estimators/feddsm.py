@@ -145,7 +145,7 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
 
     results = {}
     if any(e_.startswith("FedDSM") for e_ in estimands):
-        taus, unit_w = _match(lp, mu, Wa, Ya, target, M)
+        taus, unit_w = _match(lp, mu, Wa, Ya, Ha, target, M)
         bal = smd(pd.DataFrame(conf), Wa, unit_w).abs()
         for name, key in (("FedDSM", "quad"), ("FedDSM-noBA", "none")):
             if name in estimands:
@@ -246,37 +246,77 @@ def _basis(X, quad, D=None, interactions=True):
     return np.column_stack(cols)
 
 
-def _match(lp, mu, W, Y, target, M):
-    """Mahalanobis matching on the scores; returns ({"none", "quad"}: τ̂, unit weights)."""
+def _match(lp, mu, W, Y, H, target, M):
+    """Mahalanobis matching on the scores; returns ({"none", "quad"}: τ̂, unit weights).
+
+    τ̂ is computed in its outcome-local form (_local_tau): each site needs only the
+    match weights of its own patients and sends two sums, so no outcome leaves a site.
+    It equals the pair-difference form (_pair_tau) exactly (tests/test_feddsm.py)."""
+    V = np.column_stack([lp, mu[0]] + ([mu[1]] if target == "ATE" else []))
+    n, n1 = len(W), int(W.sum())
+    unit_w = np.zeros(n)
+    parts = {}
+    for est in (("ATT",) if target == "ATT" else ("ATT", "ATC")):
+        ti, ci, pw = _match_pairs(V, W, Y, est, M)
+        np.add.at(unit_w, ti, pw)
+        np.add.at(unit_w, ci, pw)
+        m_ = mu[0] if est == "ATT" else mu[1]
+        parts[est] = {"none": _local_tau(ti, ci, pw, W, Y, H, None, est),
+                      "quad": _local_tau(ti, ci, pw, W, Y, H, m_, est)}
+    if target == "ATT":
+        return parts["ATT"], unit_w
+    return {k: (n1 * parts["ATT"][k] + (n - n1) * parts["ATC"][k]) / n
+            for k in ("none", "quad")}, unit_w
+
+
+def _match_pairs(V, W, Y, est, M):
+    """Matching::Match pairs (0-based treated index, control index, pair weight)."""
     ensure_r_home()
     import rpy2.robjects as ro
     from rpy2.robjects.packages import importr
 
     from src.estimators.genmatch import _r_matrix
 
-    M_ = importr("Matching")
-    V = np.column_stack([lp, mu[0]] + ([mu[1]] if target == "ATE" else []))
-    n, n1 = len(W), int(W.sum())
-    unit_w = np.zeros(n)
-    parts = {}
-    for est in (("ATT",) if target == "ATT" else ("ATT", "ATC")):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            m = M_.Match(Y=ro.FloatVector(Y), Tr=ro.FloatVector(W), X=_r_matrix(ro, V),
-                         estimand=est, M=M, replace=True, ties=True, Weight=2)
-        ti = np.asarray(m.rx2("index.treated"), int) - 1
-        ci = np.asarray(m.rx2("index.control"), int) - 1
-        pw = np.asarray(m.rx2("weights"), float)
-        np.add.at(unit_w, ti, pw)
-        np.add.at(unit_w, ci, pw)
-        d = Y[ti] - Y[ci]
-        m_ = mu[0] if est == "ATT" else mu[1]
-        parts[est] = {"none": np.sum(pw * d) / pw.sum(),
-                      "quad": np.sum(pw * (d - (m_[ti] - m_[ci]))) / pw.sum()}
-    if target == "ATT":
-        return parts["ATT"], unit_w
-    return {k: (n1 * parts["ATT"][k] + (n - n1) * parts["ATC"][k]) / n
-            for k in ("none", "quad")}, unit_w
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = importr("Matching").Match(Y=ro.FloatVector(Y), Tr=ro.FloatVector(W),
+                                      X=_r_matrix(ro, V), estimand=est, M=M,
+                                      replace=True, ties=True, Weight=2)
+    return (np.asarray(m.rx2("index.treated"), int) - 1,
+            np.asarray(m.rx2("index.control"), int) - 1,
+            np.asarray(m.rx2("weights"), float))
+
+
+def match_weights(ti, ci, pw, n, est):
+    """(u, K): u_i = total pair weight of unit i as a target unit (the treated for the
+    ATT, the controls for the ATC), K_j = its total weight as a match (donor)."""
+    own, donor = (ti, ci) if est == "ATT" else (ci, ti)
+    u, K = np.zeros(n), np.zeros(n)
+    np.add.at(u, own, pw)
+    np.add.at(K, donor, pw)
+    return u, K
+
+
+def _local_tau(ti, ci, pw, W, Y, H, m, est):
+    """Outcome-local matching estimate. With ω_i = u_i + K_i and σ_i = +1 (treated) or
+    −1 (control), τ̂ = Σ_k S_k / Σ_k N_k, where site k computes from its own patients
+    S_k = Σ_{i in k} σ_i ω_i (Y_i − m(X_i)) and N_k = Σ_{i in k} u_i (m = 0 without
+    bias adjustment). Sites need only their own patients' u and K."""
+    u, K = match_weights(ti, ci, pw, len(W), est)
+    r = Y if m is None else Y - m
+    contrib = np.where(W == 1, 1.0, -1.0) * (u + K) * r
+    S = np.bincount(H, weights=contrib)
+    N = np.bincount(H, weights=u)
+    return float(S.sum() / N.sum())
+
+
+def _pair_tau(ti, ci, pw, Y, m):
+    """Pair-difference form (needs the matched patients' outcomes in one place); kept
+    for the equivalence test only."""
+    d = Y[ti] - Y[ci]
+    if m is not None:
+        d = d - (m[ti] - m[ci])
+    return float(np.sum(pw * d) / pw.sum())
 
 
 def _balance_extras(bal, d, ps):

@@ -95,3 +95,23 @@ def test_interaction_rule_keeps_products_on_small_bases():
                        Y=rng.normal(size=600))
     c = feddsm.estimate_multi(wide, ["FedDSM"], target="ATT", seed=1)["FedDSM"]
     assert not c["interactions_0"] and c["n_basis_0"] == 40 + 40 + 1
+
+
+@pytest.mark.parametrize("est", ["ATT", "ATC"])
+def test_outcome_local_estimate_equals_pair_differences(est):
+    """The outcome-local form (sites send two sums each) is the pair-difference
+    estimate exactly, with and without bias adjustment."""
+    df, _, _ = _sites_data(n=900, seed=3)
+    W, Y, H = df.W.to_numpy(), df.Y.to_numpy(), df.H.to_numpy()
+    rng = np.random.default_rng(4)
+    V = np.column_stack([df.X1, df.X2 + rng.normal(scale=0.1, size=len(df))])
+    m = df.X1.to_numpy() * 2 + rng.normal(size=len(df))
+    for M in (1, 4):
+        ti, ci, pw = feddsm._match_pairs(V, W, Y, est, M)
+        for mm in (None, m):
+            assert feddsm._local_tau(ti, ci, pw, W, Y, H, mm, est) == pytest.approx(
+                feddsm._pair_tau(ti, ci, pw, Y, mm), rel=1e-12, abs=1e-12)
+        u, K = feddsm.match_weights(ti, ci, pw, len(W), est)
+        target = W == (1 if est == "ATT" else 0)
+        np.testing.assert_allclose(u[target], 1.0)   # every target unit's weights sum to 1
+        assert (u[~target] == 0).all() and (K[target] == 0).all()
