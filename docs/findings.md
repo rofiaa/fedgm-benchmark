@@ -766,6 +766,43 @@ items (`docs/feddsm_protocol.md`): covariate deciles; for clipping, each arm's m
 - *Extrapolation:* supported if FedDSM-clip has at most 1 ACIC ATE dataset with |err| > 2
   (quadratic FedDSM: 8/1,540; tuned: 7/1,540).
 
+**Results** (`experiments/checks/feddsm_binned_compare.py` → `results/checks/feddsm_binned_*.csv`;
+77 × 20 ACIC datasets, 600 authors' per estimand, 100 IHDP, 0 errors). **Under the rule:
+partial on the primary, no-harm fails on one cell, extrapolation explanation not supported.**
+
+| ACIC, mean per-setting RMSE | ATE | ATT |
+|---|---|---|
+| Quadratic FedDSM | 0.365 | 0.314 |
+| Tuned FedDSM (N12) | 0.340 | 0.286 |
+| **Binned FedDSM** | **0.289** | **0.211** |
+| Binned, clipped (`FedDSM-clip`) | 0.268 | 0.212 |
+| Binned, no bias adj. | 0.254 | 0.221 |
+| Forest-score matching (centralized) | 0.189 | 0.136 |
+| Share of gap closed (binned FedDSM) | **43%** | **58%** |
+
+- **Primary: partial.** 43% (ATE) and 58% (ATT): not ≥ 50% on both, not < 25% on either.
+  Paired change vs quadratic: ATE −0.076 ± 0.017 (better in 64/77), ATT −0.103 ± 0.011
+  (71/77). Still behind the forest score: +0.100 ± 0.033 (ATE), +0.075 ± 0.009 (ATT);
+  better than it in 14/77 and 13/77 settings. Also behind centralized AIPW RF + RF (0.249,
+  0.169; N10).
+- **Which model it picks:** bins in 63% of ACIC datasets, squares 35%, on both arms. On the
+  authors' DGPs squares always; on IHDP's control arm bins only 2%.
+- **No-harm check: fails on IHDP ATT** (0.312 → 0.333, +0.021 > 0.01; paired |err|
+  +0.004 ± 0.005), the same RMSE as N12's tuned score, and bins are chosen in only 2% of
+  those datasets, so the search, not the bins, is the cause. IHDP ATE improves (0.156 →
+  0.132). All 12 authors' DGP cells are within ±0.003.
+- **Extrapolation: not supported as stated.** `FedDSM-clip` has 6/1,540 ACIC ATE datasets
+  with |err| > 2 (binned FedDSM 7, rule ≤ 1), largest 7.2 (12.0 unclipped), all one-term
+  overlap. Without bias adjustment there are none (largest 1.97). So the adjustment is
+  still the source, but out-of-range predictions do not explain it fully. Cause not
+  established.
+- Secondary (not what the rule scored): clipping (ATE 55% of the gap) and dropping the
+  adjustment (50%) do better than the primary on the ATE, because of these few datasets.
+
+**Decision under the rule:** do not replace the default with score="binned". One round of
+sums gets about halfway to the forest score; it is neither enough nor exhausted. Whether to
+try an interactive model (step 3) is open. Costs of adopting bins: decile sharing, not audited.
+
 ---
 
 ## Compatibility notes (no effect on results)

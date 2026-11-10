@@ -42,6 +42,10 @@ SOURCES = [  # (results dir, dataset, estimand, configs to drop, note)
     ("feddsm_authors_tuned_att", "Authors' DGPs", "ATT", [], "post-hoc (N12)"),
     ("feddsm_ihdp_tuned", "IHDP", "ATE", [], "post-hoc (N12)"),
     ("feddsm_ihdp_tuned_att", "IHDP", "ATT", [], "post-hoc (N12)"),
+    ("feddsm_authors_binned", "Authors' DGPs", "ATE", [], "post-hoc (N13)"),
+    ("feddsm_authors_binned_att", "Authors' DGPs", "ATT", [], "post-hoc (N13)"),
+    ("feddsm_ihdp_binned", "IHDP", "ATE", [], "post-hoc (N13)"),
+    ("feddsm_ihdp_binned_att", "IHDP", "ATT", [], "post-hoc (N13)"),
 ]
 # primary FedDSM PS per dataset (from the dataset's confounding assumption)
 PRIMARY_PS = {"Authors' DGPs": "x", "IHDP": "site", "LaLonde": "x", "ACIC 2016": "x"}
@@ -62,6 +66,13 @@ def label(config, estimator):
         key = {"FedDSM": "feddsm_tuned", "FedDSM-noBA": "feddsm_tuned_noba",
                "FedAIPW-quad": "fedaipw_tuned"}[estimator]
         return f"{name} · tuned ridge score, post-hoc · {PS_NAME[ps]}", "FedDSM (ours)", "yes", f"{key}:{ps}"
+    if config.startswith("feddsmb_"):
+        ps = config.removeprefix("feddsmb_")
+        name = {"FedDSM": "FedDSM", "FedDSM-noBA": "FedDSM (no bias adj.)", "FedDSM-clip": "FedDSM (clipped)",
+                "FedAIPW-quad": "Fed-AIPW (FedDSM's models)"}[estimator]
+        key = {"FedDSM": "feddsm_binned", "FedDSM-noBA": "feddsm_binned_noba", "FedDSM-clip": "feddsm_binned_clip",
+               "FedAIPW-quad": "fedaipw_binned"}[estimator]
+        return f"{name} · binned score, post-hoc · {PS_NAME[ps]}", "FedDSM (ours)", "yes", f"{key}:{ps}"
     if config.startswith("feddsm_"):
         ps = config.removeprefix("feddsm_")
         name = {"FedDSM": "FedDSM", "FedDSM-noBA": "FedDSM (no bias adj.)",
@@ -105,13 +116,18 @@ def label(config, estimator):
     raise KeyError((config, estimator))
 
 
+def tag_score(rows, run):
+    """Post-hoc score variants get their own config prefix (same config_id as the baseline)."""
+    prefix = "feddsmt_" if "tuned" in run else "feddsmb_" if "binned" in run else None
+    return rows if prefix is None else rows.assign(config_id=rows.config_id.str.replace("feddsm_", prefix))
+
+
 def simulated():
     out = []
     for d, dataset, estimand, drop, note in SOURCES:
         rows = load_rows(ROOT / "results" / d)
         rows = rows[~rows.config_id.isin(drop)]
-        if "tuned" in d:
-            rows = rows.assign(config_id=rows.config_id.str.replace("feddsm_", "feddsmt_"))
+        rows = tag_score(rows, d)
         for (scen, cfg, est), g in rows.groupby(["scenario", "config_id", "estimator"]):
             s = score(g)
             err = (g["tau"] - g["tau_true"])[np.isfinite(g["tau"])]
@@ -137,12 +153,12 @@ def acic():
     for d, estimand in (("feddsm_acic", "ATE"), ("feddsm_acic_att", "ATT"),
                         ("feddsm_acic_flex", "ATE"), ("feddsm_acic_flex_att", "ATT"),
                         ("feddsm_acic_dsmrf", "ATE"), ("feddsm_acic_dsmrf_att", "ATT"),
-                        ("feddsm_acic_tuned", "ATE"), ("feddsm_acic_tuned_att", "ATT")):
+                        ("feddsm_acic_tuned", "ATE"), ("feddsm_acic_tuned_att", "ATT"),
+                        ("feddsm_acic_binned", "ATE"), ("feddsm_acic_binned_att", "ATT")):
         rows = load_rows(ROOT / "results" / d)
         if "dsmrf" in d:  # AIPW-RF-rfps there is the same fit as in the flex run
             rows = rows[rows.estimator.str.startswith("DSM")]
-        if "tuned" in d:
-            rows = rows.assign(config_id=rows.config_id.str.replace("feddsm_", "feddsmt_"))
+        rows = tag_score(rows, d)
         rows = rows.assign(err=rows["tau"] - rows["tau_true"])
         for (cfg, est), g in rows.groupby(["config_id", "estimator"]):
             per = pd.DataFrame([score(x.drop(columns="err")) for _, x in g.groupby("scenario")])

@@ -203,6 +203,9 @@ notebook's code (they differ from App. D Table 2; F3).
   (the site is not a confounder), "site" for IHDP. No SE yet (se = NaN). Privacy: the
   per-site, per-fold sums disclose patients exactly in cells of 1–2 patients; a
   protocol and threat model are pending.
+  Post-hoc score options (default stays `score="ols"`): `"tuned"` (N12), `"binned"` and
+  the `FedDSM-clip` estimand (N13). `"binned"` closes 43% / 58% (ATE / ATT) of the ACIC gap
+  to forest-score matching.
 - Centralized flexible references in `src/estimators/flex_outcome.py` (RF AIPW, regression,
   and `DSM_ESTIMANDS`: FedDSM's matching with forest prognostic scores). On ACIC the
   forest score beats AIPW RF + RF; the quadratic score is what limits FedDSM (findings N10, N11).
