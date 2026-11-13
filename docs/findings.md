@@ -803,6 +803,44 @@ partial on the primary, no-harm fails on one cell, extrapolation explanation not
 sums gets about halfway to the forest score; it is neither enough nor exhausted. Whether to
 try an interactive model (step 3) is open. Costs of adopting bins: decile sharing, not audited.
 
+### N14. IST semi-synthetic benchmark, federated and centralized methods (2026-11-13)
+
+Design fixed before the run: docs/ist_design.md (real patients, 9 countries, real
+6-month death as Y(0); simulated treatment and effect; n = 3,000 per rep). 100 reps per
+scenario; runs `results/ist`, `results/ist_att`, `results/ist_single_arm`. **Accuracy
+only** (no SE for FedDSM, no bootstrap). GenMatch pending (Narval). RMSE in percentage
+points; "z" = paired difference in squared error vs FedDSM / its SE (> 2: FedDSM better).
+FedDSM's PS follows the scenario: covariate-only (`x`), except site-aware in `obs_site`.
+
+| RMSE (pp) | obs_good ATE | obs_poor ATE | obs_site ATE | obs_good ATT | obs_poor ATT | obs_site ATT | single_arm ATT |
+|---|---|---|---|---|---|---|---|
+| **FedDSM** | 1.60 | **1.95** | **1.76** | 1.42 | **1.76** | 1.61 | 2.61 |
+| Fed-AIPW, FedAvg MW (paper) | 1.48 | 2.64 (z 3.0) | 2.31 (z 3.4) | 1.53 | 2.56 (z 4.1) | 1.60 | n/a |
+| Fed-AIPW, NN MW (paper) | 1.48 | 2.81 (z 3.1) | 2.16 (z 2.8) | 1.54 | 2.49 (z 3.8) | **1.50** (z −0.8) | n/a |
+| Meta-SW AIPW | 1.53 | 2.94 | 4.37 | 1.64 | 2.77 | 8.55 | n/a |
+| Pooled PS AIPW (centralized) | 1.44 (z −2.3) | 2.56 | 2.32 | 1.52 | 2.62 | 2.24 | 2.97 |
+| Pooled PS IPW-Hajek (centralized) | 1.59 | 2.99 | 2.55 | 1.59 | 2.71 | 2.11 | **2.28** (z −2.4) |
+| DSM-RF (centralized, forest score) | 1.47 (z −2.4) | 1.94 | 1.76 | 1.51 | 1.77 | 1.66 | 2.62 |
+| AIPW RF + RF (centralized) | 1.50 | 2.30 (z 3.0) | 2.52 | 1.48 | 2.13 (z 3.3) | 2.42 | 2.38 |
+| FedDSM, covariate-only PS, in obs_site | | | 2.67 (z 5.9) | | | 2.61 (z 5.8) | |
+
+- **Poor overlap: FedDSM is best, with z ≥ 2.5 against every other method's AIPW or IPW,**
+  and equal to centralized double-score matching with forest scores (DSM-RF). Its bias is
+  small (−0.6 / −0.4 pp); the PS-weighting methods are biased by 1.3–2.2 pp.
+- **Site confounding (obs_site): the site-aware PS is needed.** With it, FedDSM is best on
+  the ATE (1.76) and ties the paper's Fed-AIPW on the ATT (1.50–1.61, z −0.8 to 0.1). The
+  covariate-only PS is biased (−2.1 pp), as expected. The paper's federated methods
+  condition on the site through the membership weights.
+- **Good overlap: all methods are near the noise floor (1.4–1.7 pp).** FedDSM on the ATE
+  is slightly worse than AIPW-type estimators (1.60 vs 1.41–1.48, z −2 to −3), because
+  matching with M = 4 uses the controls less efficiently than weighting when overlap is
+  good.
+- **Single arm (Bret's setting): FedDSM is not the best.** Pooled IPW-Hajek 2.28 vs
+  FedDSM 2.61 (z −2.4). With 8% treated (~240) and abundant controls, 4 matches per treated
+  use few of the controls; IPW uses all of them. Whether a larger M (or weighting on
+  FedDSM's scores) closes this is open; any change would be post-hoc. The paper's
+  estimators and Meta-SW cannot run (no site has both arms).
+
 ---
 
 ## Compatibility notes (no effect on results)

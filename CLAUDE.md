@@ -194,6 +194,12 @@ notebook's code (they differ from App. D Table 2; F3).
   on X1..X18 + H, pooled PS and GenMatch on X1..X25 (site dummies); GenMatch balance
   matrix = 25 covariates + squares/products of X1..X6 (`balance_quad`). Fed-DW is not
   applicable (singular site covariances). GenMatch ≈ 23 min per replication on one core.
+- IST (`src/dgps/ist.py`, data via `setup/download_ist.sh`; design fixed in
+  docs/ist_design.md): real patients/countries/6-month death as Y(0), simulated treatment
+  and effect, exact truth. Scenarios obs_good/obs_poor/obs_site (site confounds; use
+  FedDSM ps="site") and single_arm (Bret Nestor's setting: treated = one trial site).
+  Configs `ist.py`, `ist_att.py`, `ist_single_arm.py`; results in findings N14.
+  GenMatch on ACIC: `gm_acic(_att).py` (reduced search budget; Narval).
 - FedDSM (our proposed method; docs/findings.md N5–N8) in `src/estimators/feddsm.py`
   (`estimate_multi(df, estimands, target="ATE"|"ATT", ps="x"|"site"|"khellaf", M=4)`):
   match on (logit ê, cross-fitted quadratic prognostic score m̂₀ [, m̂₁]) with
