@@ -41,3 +41,18 @@ def test_balance_table_against_direct_formulas():
     assert tw.ks["a"] == pytest.approx(tr.ks["a"])
     s = balance_summary(t)
     assert s["max_smd_pooled"] == pytest.approx(t.smd_pooled.abs().max())
+
+
+def test_smd_matched_uses_weighted_sample_sd():
+    from src.estimators.balance import balance_table
+
+    rng = np.random.default_rng(2)
+    X = pd.DataFrame({"a": rng.normal(size=300)})
+    W = (rng.random(300) < 0.5).astype(int)
+    w = rng.integers(1, 4, 300).astype(float)
+    rep = np.repeat(np.arange(300), w.astype(int))
+    xr, wr = X.a.to_numpy()[rep], W[rep]
+    direct = (xr[wr == 1].mean() - xr[wr == 0].mean()) / np.sqrt(
+        (xr[wr == 1].var(ddof=1) + xr[wr == 0].var(ddof=1)) / 2)
+    assert balance_table(X, W, w).smd_matched["a"] == pytest.approx(direct, rel=0.02)
+    np.testing.assert_allclose(balance_table(X, W).smd_matched, balance_table(X, W).smd_pooled)

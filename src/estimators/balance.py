@@ -54,6 +54,9 @@ def balance_table(X, W, weights=None):
     smd_pooled:  as `smd` (pooled SD of the unweighted sample, the same for all methods).
     smd_treated: same numerator over the treated SD of the unweighted sample (the ATT
                  convention, e.g. cobalt's default for the ATT).
+    smd_matched: same numerator over the pooled SD of the *weighted* (matched) sample,
+                 sqrt((s1w^2 + s0w^2) / 2), as in Fed-GenMatch's objective (B. Nestor's
+                 draft, eq. 11); it changes with the weights.
     var_ratio:   weighted treated variance / weighted control variance (NaN for binary
                  covariates, where it is determined by the proportions).
     ks:          weighted Kolmogorov-Smirnov statistic.
@@ -72,6 +75,7 @@ def balance_table(X, W, weights=None):
         out = pd.DataFrame({
             "smd_pooled": diff / np.sqrt((sd_t ** 2 + sd_c ** 2) / 2),
             "smd_treated": diff / sd_t,
+            "smd_matched": diff / np.sqrt((_wvar(A[t], w[t]) + _wvar(A[c], w[c])) / 2),
             "var_ratio": np.where(binary, np.nan, vr),
             "ks": [_wks(A[t, j], w[t], A[c, j], w[c]) for j in range(A.shape[1])],
             "binary": binary,
@@ -87,6 +91,7 @@ def balance_summary(table):
     lvr = np.abs(np.log(cont.var_ratio))
     return dict(max_smd_pooled=float(table.smd_pooled.abs().max()),
                 max_smd_treated=float(table.smd_treated.abs().replace(np.inf, np.nan).max()),
+                max_smd_matched=float(table.smd_matched.abs().replace(np.inf, np.nan).max()),
                 share_smd_gt_0_1=float((table.smd_pooled.abs() > 0.1).mean()),
                 worst_var_ratio=float(np.exp(lvr.max()) if len(cont) else np.nan),
                 share_vr_outside=float(((cont.var_ratio < 0.5) | (cont.var_ratio > 2)).mean())
