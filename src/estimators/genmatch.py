@@ -179,6 +179,34 @@ def estimate_multi(df, estimands=ESTIMANDS, covariates="X+ps", seed=None, cores=
     return results
 
 
+def rematch(df, gm_weights, covariates="X+ps", target="ATE"):
+    """Rebuild a GenMatch match from its saved diagonal weights (result rows'
+    gm_weights_<column>) without a new search: Match with Weight.matrix = diag(weights)
+    on the same matching covariates. Returns (tau, unit weights as in estimate_multi).
+    gm_weights: {matching column: weight}, e.g. {"X1": ..., "ps_logit": ...}."""
+    ensure_r_home()
+    import rpy2.robjects as ro
+    from rpy2.robjects.packages import importr
+
+    x_cols = sorted((c for c in df.columns if c[0] == "X" and c[1:].isdigit()),
+                    key=lambda c: int(c[1:]))
+    X = df[x_cols].to_numpy(dtype=float)
+    cols = list(x_cols)
+    if covariates == "X+ps":
+        X = np.column_stack([X, pooled_ps_logit(df)])
+        cols.append("ps_logit")
+    w = np.array([gm_weights[c] for c in cols], dtype=float)
+    W = df["W"].to_numpy(dtype=int)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = importr("Matching").Match(Y=ro.FloatVector(df["Y"].to_numpy(float)),
+                                      Tr=ro.FloatVector(W), X=_r_matrix(ro, X),
+                                      estimand=target, M=1, replace=True, ties=True,
+                                      Weight=3, Weight_matrix=_r_matrix(ro, np.diag(w)))
+    return float(m.rx2("est")[0]), pd.Series(_unit_weights(m, len(W)).to_numpy(),
+                                              index=df.index, name="w_match")
+
+
 def _r_matrix(ro, A):
     A = np.asarray(A, dtype=float)
     return ro.r.matrix(ro.FloatVector(A.ravel(order="F")), nrow=A.shape[0])

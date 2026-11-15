@@ -212,3 +212,19 @@ def test_clip_changes_only_out_of_range_predictions():
 
 def test_default_estimands_exclude_clip():
     assert "FedDSM-clip" not in feddsm.ESTIMANDS
+
+
+@pytest.mark.parametrize("target", ["ATE", "ATT"])
+def test_unit_weights_are_the_match(target):
+    df, _, _ = _sites_data()
+    r = feddsm.estimate_multi(df, ["FedDSM", "FedDSM-noBA"], target=target, seed=1)
+    w = r["FedDSM"]["unit_weights"].to_numpy()
+    W, Y = df.W.to_numpy(), df.Y.to_numpy()
+    # without bias adjustment the ATT is the weighted mean difference of the matched sample
+    if target == "ATT":
+        tau = np.average(Y[W == 1], weights=w[W == 1]) - np.average(Y[W == 0], weights=w[W == 0])
+        assert tau == pytest.approx(r["FedDSM-noBA"]["tau"], abs=1e-10)
+    assert (w[W == 1] > 0).all() if target == "ATT" else (w > 0).all()
+    from src.estimators.balance import smd
+    assert float(smd(df[["X1", "X2", "X3"]], W, w).abs().max()) == pytest.approx(
+        r["FedDSM"]["max_smd"])

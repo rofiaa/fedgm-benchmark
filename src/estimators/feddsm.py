@@ -90,6 +90,7 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
     seed: fold assignment (np.random.SeedSequence(seed)); for ps="khellaf" also
         passed to fed_ps.
     Extras: target, ps_model, M, max_smd_x, max_smd_site (when ps="site"),
+    unit_weights (FedDSM / FedDSM-noBA: each unit's total pair weight, 0 if unmatched),
     undefined_reason, n_active, ps_iterations, n_basis_0 / n_basis_1,
     interactions_0 / interactions_1.
     """
@@ -193,10 +194,14 @@ def estimate_multi(df, estimands=ESTIMANDS, target="ATE", ps="x", M=4, folds=5,
     if any(e_ in ("FedDSM", "FedDSM-noBA") for e_ in estimands):
         taus, unit_w = _match(lp, mu, Wa, Ya, Ha, target, M)
         bal = smd(pd.DataFrame(conf), Wa, unit_w).abs()
+        w_full = np.zeros(len(W))
+        w_full[active] = unit_w
         for name, key in (("FedDSM", "quad"), ("FedDSM-noBA", "none")):
             if name in estimands:
                 results[name] = dict(tau=float(taus[key]), se=float("nan"),
                                      se_method=_SE_METHOD, max_smd=float(bal.max()),
+                                     unit_weights=pd.Series(w_full, index=df.index,
+                                                            name="w_match"),
                                      **_balance_extras(bal, Xa.shape[1], ps), **extras)
     if "FedAIPW-quad" in estimands:
         if target == "ATT":

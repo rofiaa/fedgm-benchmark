@@ -78,3 +78,18 @@ def test_balance_matrix_restricted_quadratic_terms():
     np.testing.assert_array_equal(B[:, :4], X)
     np.testing.assert_array_equal(B[:, 4], X[:, 0] ** 2)
     np.testing.assert_array_equal(B[:, 6], X[:, 0] * X[:, 2])
+
+
+@pytest.mark.parametrize("target", ["ATE", "ATT"])
+def test_rematch_rebuilds_the_match_from_saved_weights(hetero, target):
+    from experiments.harness import flatten
+    from src.estimators.genmatch import rematch
+
+    df, _ = hetero
+    res = estimate_multi(df, ["GM"], covariates="X+ps", seed=7, target=target,
+                         genmatch_params=FAST)["GM"]
+    row = flatten(res)  # what a result row keeps
+    saved = {k[len("gm_weights_"):]: v for k, v in row.items() if k.startswith("gm_weights_")}
+    tau, w = rematch(df, saved, target=target)
+    assert tau == pytest.approx(res["tau"], abs=1e-12)
+    np.testing.assert_allclose(w.to_numpy(), res["unit_weights"].to_numpy())

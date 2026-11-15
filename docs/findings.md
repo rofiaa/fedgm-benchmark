@@ -840,6 +840,13 @@ FedDSM's PS follows the scenario: covariate-only (`x`), except site-aware in `ob
   use few of the controls; IPW uses all of them. Whether a larger M (or weighting on
   FedDSM's scores) closes this is open; any change would be post-hoc. The paper's
   estimators and Meta-SW cannot run (no site has both arms).
+- **Machine dependence of the PS-weighting comparators (2026-11-15).** The same IST
+  datasets rerun on Narval give identical FedDSM estimates (|diff| < 1e-10) but pooled /
+  Meta-SW / Fed-IPW estimates that differ by up to 1.5 pp per dataset: the authors'
+  sklearn logistic fit (`compute_gamma`) does not converge on IST's unscaled covariates
+  (lbfgs warnings), and where it stops is machine-dependent. GenMatch matches on the
+  pooled PS logit too, so its rebuilt match (genmatch.rematch) is exact only on the
+  machine of the run. Their RMSEs above are Mac numbers; their noise is not resolved.
 
 ---
 
