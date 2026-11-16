@@ -920,6 +920,18 @@ better). Pooled-PS numbers here are Narval's (machine-dependent, N14).
   (ACIC 8 s).
 - R GenMatch ≠ Bret's Fed-GenMatch (with replacement, p-value fitness, pooled-SD scaling);
   on single-arm the two tie (N15).
+- **Balance (bal_* columns; median max |SMD|, pooled SD, 31 patient covariates on IST from
+  `results/checks/ist_balance_rows.csv`, X on ACIC from the runs' key).** FedDSM / GM / Maha /
+  pooled IPW: obs_good ATE 0.068 / 0.058 / 0.143 / 0.103; obs_poor ATE 0.137 / 0.177 / 0.386
+  / 0.186; obs_site ATE 0.116 / 0.118 / 0.276 / 0.149; obs_good ATT 0.050 / 0.086 / 0.168 /
+  0.080; obs_poor ATT 0.178 / 0.190 / 0.456 / 0.324; obs_site ATT 0.122 / 0.145 / 0.318 /
+  0.181; single_arm 0.106 / 0.128 / 0.317 / 0.173; ACIC 0.057 / 0.163 / 0.200 / 0.099.
+  Covariate balance tracks accuracy only loosely: GenMatch's best balance (obs_good ATE)
+  buys no accuracy, and in obs_site ATT FedDSM with the covariate-only PS balances the
+  patient covariates better than the site-aware one (0.091 vs 0.122) but leaves the
+  countries unbalanced (0.341 vs 0.081) and is far less accurate (2.76 vs 1.60 pp).
+  The IST balance check predates the Narval reruns: obs_poor ATE 25 and obs_site ATE 23
+  datasets of 30; rerun it on Narval after the last GenMatch task.
 
 ---
 
