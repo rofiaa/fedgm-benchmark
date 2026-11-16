@@ -808,7 +808,7 @@ try an interactive model (step 3) is open. Costs of adopting bins: decile sharin
 Design fixed before the run: docs/ist_design.md (real patients, 9 countries, real
 6-month death as Y(0); simulated treatment and effect; n = 3,000 per rep). 100 reps per
 scenario; runs `results/ist`, `results/ist_att`, `results/ist_single_arm`. **Accuracy
-only** (no SE for FedDSM, no bootstrap). GenMatch pending (Narval). RMSE in percentage
+only** (no SE for FedDSM, no bootstrap). GenMatch: N16 (Narval, 30 reps). RMSE in percentage
 points; "z" = paired difference in squared error vs FedDSM / its SE (> 2: FedDSM better).
 FedDSM's PS follows the scenario: covariate-only (`x`), except site-aware in `obs_site`.
 
@@ -883,6 +883,43 @@ Results: `results/fedgm_ablation/paired.csv` (`experiments/checks/fedgm_ablation
   keyed by config name, identical to a full run; single_arm rows equal
   `results/ist_single_arm` exactly) and merged. The FedGM rows were kept: reps 0–2 of
   nt=50 rerun in `fedgm` are bit-identical.
+
+### N16. Centralized R GenMatch vs FedDSM on IST and ACIC ATT (2026-11-16)
+
+Narval runs: `results/ist_cc` (ATE), `ist_att_cc` (ATT), `ist_single_arm_cc` (ATT), 30 reps
+per scenario, every method from the same run; `results/gm_acic_att`: rep 0 of each of the
+77 ACIC settings, paired with `feddsm_acic_att` / `feddsm_acic_flex_att` (same data seeds
+and truths). GenMatch = `gm_xps` (X + pooled PS logit; D&S settings on IST, reduced budget
+on ACIC). Table: `results/checks/genmatch_compare.csv`
+(`experiments/checks/genmatch_compare.py`). Accuracy only. IST obs_site ATE: 29 reps (rep 0
+still running on Narval). z = paired squared-error difference vs FedDSM / SE (> 2: FedDSM
+better). Pooled-PS numbers here are Narval's (machine-dependent, N14).
+
+"Best other" = lowest RMSE outside FedDSM's config, GenMatch's config and DSM-RF.
+
+| RMSE (IST pp; ACIC outcome units) | FedDSM | GM | GM-BA | Maha | DSM-RF | best other |
+|---|---|---|---|---|---|---|
+| IST obs_good ATE | 1.45 | 1.45 (z 0.0) | 1.34 (−0.7) | 1.80 | 1.35 (−1.1) | Meta-SW AIPW 1.18 (−2.2) |
+| IST obs_poor ATE | 2.01 | 2.88 (3.7) | 2.20 (0.8) | 4.23 | 1.66 (−1.9) | AIPW RF 2.18 (0.8) |
+| IST obs_site ATE (29) | 1.50 | 2.51 (2.3) | 1.75 (0.8) | 3.48 | 1.62 (0.7) | pooled AIPW 1.85 (1.5) |
+| IST obs_good ATT | 1.30 | 1.81 (1.8) | 1.92 (2.0) | 1.38 | 1.39 (0.7) | Fed-IPW, FedAvg MW 1.33 (0.2) |
+| IST obs_poor ATT | 1.69 | 1.89 (0.8) | 2.34 (2.0) | 2.93 | 1.74 (0.3) | AIPW RF 2.01 (1.4) |
+| IST obs_site ATT | 1.60 | 1.91 (1.1) | 2.39 (2.4) | 2.64 | 1.84 (1.1) | Fed-AIPW, NN MW 1.57 (−0.2) |
+| IST single_arm ATT | 2.33 | 3.17 (1.6) | 3.13 (1.5) | 2.50 | 2.27 (−0.2) | pooled IPW 2.05 (−1.0) |
+| ACIC ATT (77 datasets) | 0.332 | 0.698 (5.3) | 0.528 (3.8) | 0.762 | 0.115 (−3.5) | AIPW RF, RF PS 0.151 (−3.2) |
+
+- **GenMatch is never more accurate than FedDSM** (no z < −1 in any cell). FedDSM is
+  better (z > 2) for GM in obs_poor/obs_site ATE and ACIC, for GM-BA in obs_good/obs_poor/
+  obs_site ATT (z 2.0–2.4) and ACIC. Bias adjustment helps GenMatch on the ATE and hurts it
+  on the IST ATT.
+- **GenMatch never reaches its own balance target** (all balance p-values > 0.05) on IST
+  obs_* (0/89 ATE, 0/90 ATT; median min p 7e-9 and 5e-6) or ACIC (0/77); single-arm 17/30.
+  With n = 3,000 and 300+ balance columns, the p-value criterion is unattainable.
+- **Cost:** median GenMatch runtime per dataset (one core) ≈ 14–16 h (IST ATE),
+  5–8 h (IST ATT), 46 min (single-arm), 4.3 h (ACIC, reduced budget); FedDSM < 2 s
+  (ACIC 8 s).
+- R GenMatch ≠ Bret's Fed-GenMatch (with replacement, p-value fitness, pooled-SD scaling);
+  on single-arm the two tie (N15).
 
 ---
 
