@@ -127,8 +127,12 @@ def effect_probs(X, data_dir=DATA_DIR):
     return q, r
 
 
-def load(rep, scenario, target="ATE", n=N_SUB, data_dir=DATA_DIR):
-    """Replication `rep` of `scenario` (SCENARIOS) as X1..X31, H, W, Y."""
+def load(rep, scenario, target="ATE", n=N_SUB, data_dir=DATA_DIR, n_treated=None):
+    """Replication `rep` of `scenario` (SCENARIOS) as X1..X31, H, W, Y.
+
+    n_treated: keep only this many randomly chosen treated (all controls kept; a
+    separate random stream, so the rest of the replication is unchanged) and recompute
+    the truths on the kept rows: a small trial cohort (docs/fedgm_ablation.md)."""
     if scenario not in SCENARIOS:
         raise ValueError(f"scenario must be one of {list(SCENARIOS)}")
     if target not in ("ATE", "ATT"):
@@ -147,6 +151,16 @@ def load(rep, scenario, target="ATE", n=N_SUB, data_dir=DATA_DIR):
     u = rng.random(n)
     Y1 = np.where(Y0 == 1, (u >= q).astype(int), (u < r).astype(int))
     tau_i = r * (1 - Y0) - q * Y0
+    if n_treated is not None:
+        treated = np.flatnonzero(W == 1)
+        if not 0 < n_treated <= len(treated):
+            raise ValueError(f"n_treated must be in 1..{len(treated)}")
+        rng_t = np.random.default_rng(
+            np.random.SeedSequence([int(rep), _SCEN_ID[scenario], 1995, int(n_treated)]))
+        keep = np.sort(np.concatenate([np.flatnonzero(W == 0),
+                                       rng_t.choice(treated, n_treated, replace=False)]))
+        X, H, Y0, Y1, W, tau_i = (X.iloc[keep].reset_index(drop=True), H[keep], Y0[keep],
+                                  Y1[keep], W[keep], tau_i[keep])
 
     df = pd.DataFrame(X.to_numpy(float), columns=[f"X{i}" for i in range(1, len(COVARIATES) + 1)])
     df["H"] = np.where(W == 1, int(pop.H.max()) + 1, H) if design == "single_arm" else H

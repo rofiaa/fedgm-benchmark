@@ -53,3 +53,15 @@ def test_site_dummies():
     assert [c for c in df if c.startswith("X")] == [f"X{i}" for i in range(1, 40)]
     assert (df[[f"X{i}" for i in range(32, 40)]].sum(1) == (df.H > 0)).all()
     assert df.attrs["tau_true"] == ist.load(0, "obs_site").attrs["tau_true"]
+
+
+def test_small_treated_cohort():
+    full = ist.load(0, "single_arm", target="ATT")
+    small = ist.load(0, "single_arm", target="ATT", n_treated=50)
+    assert small.W.sum() == 50 and (small.W == 0).sum() == (full.W == 0).sum()
+    cols = [f"X{i}" for i in range(1, 32)]
+    pd.testing.assert_frame_equal(small[small.W == 0][cols].reset_index(drop=True),
+                                  full[full.W == 0][cols].reset_index(drop=True))
+    assert small.merge(full[full.W == 1], on=cols + ["H", "W", "Y"]).shape[0] == 50
+    assert small.attrs["tau_true"] != full.attrs["tau_true"]
+    pd.testing.assert_frame_equal(small, ist.load(0, "single_arm", target="ATT", n_treated=50))
