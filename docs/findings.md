@@ -848,6 +848,42 @@ FedDSM's PS follows the scenario: covariate-only (`x`), except site-aware in `ob
   pooled PS logit too, so its rebuilt match (genmatch.rematch) is exact only on the
   machine of the run. Their RMSEs above are Mac numbers; their noise is not resolved.
 
+### N15. Fed-GenMatch (Bret Nestor's draft) normaliser ablation, IST single-arm (2026-11-16)
+
+Design fixed before the run: `docs/fedgm_ablation.md`. Bret's design run centrally
+(`src/estimators/fedgm.py`; the per-site protocol gives identical matches, tested), 1:1
+optimal matching without replacement, GA over log10 w, ATT. 100 datasets each of
+`single_arm` (~235 treated) and `single_arm_nt50` (50 treated). Accuracy only.
+Results: `results/fedgm_ablation/paired.csv` (`experiments/checks/fedgm_ablation_summary.py`).
+
+| Arm (FedGM) | RMSE nt≈235 | z vs FedDSM | RMSE nt=50 | z vs FedDSM |
+|---|---|---|---|---|
+| FedDSM (reference) | 2.61 | | 5.53 | |
+| pooled IPW-Hajek | 2.28 | −2.4 | 5.20 | −1.4 |
+| diag | 3.05 | +1.8 | 6.41 | +2.2 |
+| treated_raw (draft) | 3.01 | +2.1 | 6.72 | +3.3 |
+| treated_shrunk | 3.00 | +2.2 | 6.90 | +2.7 |
+| pooled_within | 2.99 | +1.7 | 6.85 | +2.6 |
+| FedMaha (W = I), 4 arms | 3.47–4.00 | +3.4 to +5.2 | 6.47–7.18 | +2.3 to +3.3 |
+
+- **The normaliser does not matter for accuracy:** arms within 0.05 pp (nt≈235) and
+  0.5 pp (nt=50) of diag, |z| ≤ 1.0. Raw S_t rank: median 29/31 (min 27) and 26 (min 22);
+  Ledoit–Wolf shrinkage median 0.34 and 0.61.
+- **The GA helps at nt≈235, not at nt=50:** max |SMD| (Bret's eq. 11) 0.4–0.5 → 0.09;
+  RMSE −0.5 to −1.0 pp vs W = I (z −1.8 to −3.4); nt=50 |z| ≤ 0.9.
+- **Fed-GenMatch ≈ R GenMatch** (reps 0–29): 3.23–3.29 vs 3.17 pp (|z| ≤ 1.5;
+  treated_shrunk's 2.46 on these reps is chance: 3.00 over 100). ~1 min per dataset on the
+  Mac (7 workers) vs ~46 min for R on Narval.
+- **FedDSM beats every Fed-GenMatch arm** at nt=50 (z 2.2–3.3) and two of four at nt≈235
+  (z 2.1, 2.2; the others 1.7, 1.8).
+- **Federated cost:** median 5,000 (nt≈235) / 2,900 (nt=50) objective evaluations per
+  dataset, each a round of per-site distance pieces; ≥ 10% hit the 100-generation cap.
+- Run note: the first run used the wrong conda env (`pds`, no rpy2/statsmodels), so the
+  FedDSM and pooled-PS rows failed; they were rerun in `fedgm` with `--configs` (seeds
+  keyed by config name, identical to a full run; single_arm rows equal
+  `results/ist_single_arm` exactly) and merged. The FedGM rows were kept: reps 0–2 of
+  nt=50 rerun in `fedgm` are bit-identical.
+
 ---
 
 ## Compatibility notes (no effect on results)
