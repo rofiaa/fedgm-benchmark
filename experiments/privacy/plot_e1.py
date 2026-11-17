@@ -47,9 +47,13 @@ def _end_labels(ax, items, gap=0.06):
     pts = sorted(((to_ax.transform(ax.transData.transform((x, y)))[1], x, y, t)
                   for x, y, t in items))
     placed = []
-    for fy, x, y, t in pts:
-        fy = max(fy, placed[-1] + gap) if placed else fy
-        placed.append(fy)
+    for fy, *_ in pts:                       # upward pass: keep the gap
+        placed.append(max(fy, placed[-1] + gap) if placed else fy)
+    top = 0.97                               # downward pass: stay inside the axes
+    for i in range(len(placed) - 1, -1, -1):
+        placed[i] = min(placed[i], top)
+        top = placed[i] - gap
+    for fy, (_, x, y, t) in zip(placed, pts):
         ax.annotate(t, (x, y), xytext=(1.0, fy), textcoords=("axes fraction"),
                     xycoords="data", va="center", fontsize=8.5, color=INK2,
                     arrowprops=dict(arrowstyle="-", color=GRID, linewidth=0.8))

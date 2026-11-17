@@ -975,6 +975,48 @@ Gaussian, log-normal, real IST covariates × 3 releases × d × n ∈ {10, …, 
   log-normal fourth-order moments; fixed (cutoff on the correlation scale, test added) and
   rerun before any result was used.
 
+### N18. Reconstruction from Fed-GenMatch's messages (E2, 2026-11-16)
+
+Design: `docs/privacy_e2.md` (three changes after a one-task pilot, recorded there). Code
+`src/privacy/fedgm_attacks.py` (tests `tests/test_privacy_fedgm.py`), run
+`experiments/privacy/e2_fedgm.py`, figures `experiments/privacy/plot_e2.py` →
+`results/privacy/e2_fedgm/`. IST single-arm, datasets 0–9, n_t ∈ {10, 20, 31, 50, all ≈ 238},
+the draft's normaliser S_t and the shrunk one; the coordinator sees exactly the draft's
+messages along the actual GA search (1,350–4,550 evaluations). 31 covariates, 2,765 controls
+at 9 country sites.
+
+| Mean over 10 datasets, 100 evaluations | n_t = 10 | 20 | 31 | 50 | all |
+|---|---|---|---|---|---|
+| Re-identified at their site, S_t | 27% | 80% | 92% | 94% | 98% |
+| Re-identified, shrunk | 72% | 83% | 93% | 94% | 98% |
+| Covariate values recovered exactly, S_t | 0% | 13% | 64% | 80% | 94% |
+| Covariate values recovered exactly, shrunk | 63% | 72% | 84% | 85% | 95% |
+| Binary covariates correct (guessing 82%), shrunk | 96% | 98% | 99.5% | 99.7% | 99.9% |
+| All controls identified exactly from matched-set sums alone, shrunk | 19% | 31% | 43% | 57% | 92% |
+
+Random re-identification: 0.3%.
+
+- **Cross terms (draft's bullets 1–2): confirmed and quantified.** With the draft's S_t,
+  everything the protocol exposes is exposed by the first evaluation (10/10 datasets, every
+  n_t): the treated rows span exactly the range of S_t. With the shrunk (full-rank)
+  normaliser the exposed part saturates within 5 evaluations but never reaches all 31
+  covariates (0/10): covariates equal to 0 for every treated patient never enter
+  B = (X̃ᵗW) x̃ᶜ, whatever W is (our pre-run prediction that full rank would be reached was
+  wrong for this reason). Re-identification does not need full recovery: 72% of controls at
+  n_t = 10, more than 90% from n_t = p = 31 up.
+- **Matched-set sums (eq. 9): a leak the draft does not mention.** The coordinator knows
+  which controls each evaluation matched, so the sums Σx over the matched sets form a linear
+  system; 97–99% of the controls ever matched are identified exactly (all 31 covariates).
+  With the whole cohort that is 91–92% of all 2,765 controls.
+- **The draft's DP (eq. 14, ρ = the pool's diameter in raw units): no useful setting.** At
+  ε = 0.1–1,000 per entry essentially no match survives the noise (≤ 0.6% of treated keep
+  their match, first evaluation, W = I), while re-identification reappears at ε ≥ 100
+  (5–7%) and reaches 75–98% at ε = 1,000 with 100 evaluations, because the noise averages
+  out. Per-patient ε by basic composition (evaluations × n_t × ε) is far beyond any
+  meaningful budget. Caveats: exact match agreement is a strict utility measure (a noisy
+  match can be a near-equivalent control); ρ in standardized units would change the
+  calibration; noise on C and on the moments was not added (favours the DP variant).
+
 ---
 
 ## Compatibility notes (no effect on results)

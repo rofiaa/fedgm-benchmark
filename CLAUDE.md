@@ -222,7 +222,8 @@ notebook's code (they differ from App. D Table 2; F3).
   `src/privacy/` (`mia.py`: releases, tracing attack, metrics, Gaussian prediction
   Φ(√(D/2n)); `populations.py`: Gaussian / log-normal / IST). E1 (membership inference on
   shared statistics vs n and d): `docs/privacy_e1.md`, `experiments/privacy/e1_mia.py`,
-  findings N17.
+  findings N17. E2 (reconstruction from Fed-GenMatch's messages): `src/privacy/fedgm_attacks.py`,
+  `docs/privacy_e2.md`, findings N18. Open questions for meetings: `docs/meeting_questions.md`.
 - `experiments/configs/ps_mc.py`: the six-scenario PS-aggregation MC.
   `experiments/mini_mc.py` is superseded (kept for its committed results).
 
