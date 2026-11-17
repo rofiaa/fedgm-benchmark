@@ -933,6 +933,48 @@ better). Pooled-PS numbers here are Narval's (machine-dependent, N14).
   The IST balance check predates the Narval reruns: obs_poor ATE 25 and obs_site ATE 23
   datasets of 30; rerun it on Narval after the last GenMatch task.
 
+### N17. Membership inference on shared statistics: sensitivity to n and d (E1, 2026-11-16)
+
+Task from the Nov 4 meeting (evaluation, not protection). Design fixed before the run:
+`docs/privacy_e1.md`. Code `src/privacy/` (tests `tests/test_privacy_mia.py`), sweep
+`experiments/privacy/e1_mia.py`, figures `experiments/privacy/plot_e1.py` →
+`results/privacy/e1_mia/` (`cells.csv`, `roc.csv`, `figs/`). Exact releases of group means of
+φ(x): means and variances (D = 2d), means and covariance (D = d + d(d+1)/2), FedDSM's fold sums
+for the quadratic basis (all moments to order 4: D = C(d+4,4) − 1 distinct numbers). Whitened
+inner-product (tracing) attack; attacker knows the population and the target. 288 cells:
+Gaussian, log-normal, real IST covariates × 3 releases × d × n ∈ {10, …, 2000}.
+
+- **Prediction.** For Gaussian features the tracing attack gives AUROC = Φ(√(D/2n)) and
+  TPR(α) = 1 − Φ(z₁₋α − √(D/n)): n and d enter only through D/n, the released numbers per
+  patient. This reproduces the Nov 4 slide-17 pilot (whose code is not in the repo): D = 65,
+  n = 35 gives 0.83 / 16.8% at 1% FPR vs the slide's 0.85 / 16.9%.
+- **Reading rule (pre-registered): not met.** 25 of 88 Gaussian cells with D ≥ 10 are more
+  than 0.03 from the prediction, all below it (the attack does worse): the covariance release
+  at small n (up to −0.06) and the fourth-order release (up to −0.13). Means and variances
+  stay within 0.027 everywhere. Where D/n ≤ 1 every release follows the prediction.
+- **Post-hoc, did not fit:** keeping the member's own term (variance V = Var‖φ̃‖² from the
+  reference) over-corrects (`experiments/privacy/e1_refined.py`): V/2D is 6–90 for Gaussian
+  covariance and up to ~10,000 for log-normal, the member scores are then skewed, and a
+  normal approximation of a rank metric fails. The cause of the shortfall is not established.
+- **The answer to "how sensitive to n and d":** leakage is governed by D/n. At d = 10 and
+  n = 35 (a small arm), covariance gives AUROC 0.80 and TPR 13% at 1% FPR (Gaussian; IST
+  0.78 / 8.5%); at n = 650 0.58 / 2.4%. Doubling d multiplies D by ~2 for means and
+  variances but by ~4 for the covariance (D ∝ d²) and ~16 for FedDSM's fold sums (∝ d⁴).
+- **Bret's "mean and variance suffice":** at d = 10 means and variances leak about half as
+  much as the covariance at the same n (TPR at 1% FPR: 5.7% vs 13.3% at n = 35; 2.9% vs 6.7%
+  at n = 100, Gaussian; IST 4.0% vs 8.5%, 2.2% vs 5.4%).
+- **Long tails (Bret's point):** for this attack, log-normal data leak less on average
+  (AUROC up to 0.18 below the prediction), but the gap closes at low FPR at larger n,
+  where outliers are what gets detected. The attack is not optimal for non-Gaussian data, so
+  "less leakage" is a statement about this attack only.
+- **Real patients (IST):** close to the Gaussian prediction for means and variances; below it
+  for the covariance at small n (up to −0.11). Mostly binary covariates give fewer distinct
+  numbers (D = 34 for 31 covariates; covariance 447, not 527).
+- **Correction during the run:** the first run cut the attack's rank on the raw feature
+  covariance, which dropped binary features next to blood pressure² (IST: 7 of 34 kept) and
+  log-normal fourth-order moments; fixed (cutoff on the correlation scale, test added) and
+  rerun before any result was used.
+
 ---
 
 ## Compatibility notes (no effect on results)

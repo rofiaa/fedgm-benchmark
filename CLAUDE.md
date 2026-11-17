@@ -218,6 +218,11 @@ notebook's code (they differ from App. D Table 2; F3).
 - `experiments/compile_comparison.py` → `results/comparison/` builds the all-methods ×
   all-datasets table; `docs/evaluation_metrics.md` logs the metrics used in the
   literature (read from the papers; verbatim vs summary marked).
+- Privacy evaluation (the professor's Nov 4 task: evaluation, not protection) in
+  `src/privacy/` (`mia.py`: releases, tracing attack, metrics, Gaussian prediction
+  Φ(√(D/2n)); `populations.py`: Gaussian / log-normal / IST). E1 (membership inference on
+  shared statistics vs n and d): `docs/privacy_e1.md`, `experiments/privacy/e1_mia.py`,
+  findings N17.
 - `experiments/configs/ps_mc.py`: the six-scenario PS-aggregation MC.
   `experiments/mini_mc.py` is superseded (kept for its committed results).
 
