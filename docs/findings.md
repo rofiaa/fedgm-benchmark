@@ -909,8 +909,8 @@ better). Pooled-PS numbers here are Narval's (machine-dependent, N14).
 | ACIC ATT (77 datasets) | 0.332 | 0.698 (5.3) | 0.528 (3.8) | 0.762 | 0.115 (−3.5) | AIPW RF, RF PS 0.151 (−3.2) |
 
 - **GenMatch is never more accurate than FedDSM** (no z < −1 in any cell). FedDSM is
-  better (z > 2) for GM in obs_poor/obs_site ATE and ACIC, for GM-BA in obs_good/obs_poor/
-  obs_site ATT (z 2.0–2.4) and ACIC. Bias adjustment helps GenMatch on the ATE and hurts it
+  better (z > 2) for GM in obs_poor/obs_site ATE and ACIC, for GM-BA in obs_poor/
+  obs_site ATT (z 2.0, 2.4; obs_good ATT 1.98) and ACIC: 5 of 8 settings. Bias adjustment helps GenMatch on the ATE and hurts it
   on the IST ATT.
 - **GenMatch never reaches its own balance target** (all balance p-values > 0.05) on IST
   obs_* (0/89 ATE, 0/90 ATT; median min p 7e-9 and 5e-6) or ACIC (0/77); single-arm 17/30.
