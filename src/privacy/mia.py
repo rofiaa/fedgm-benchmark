@@ -32,7 +32,10 @@ def n_features(release, d):
 
 
 def features(X, release):
-    """φ(X), one row per patient. `quad` drops the constant b₀b₀ = 1 entry."""
+    """φ(X), one row per patient. `quad` drops the constant b₀b₀ = 1 entry. `release` may
+    also be a callable feature map X -> φ(X) (e.g. a method's own released sums)."""
+    if callable(release):
+        return np.asarray(release(X), float)
     X = np.asarray(X, float)
     n, d = X.shape
     if release == "mean_var":

@@ -1017,6 +1017,43 @@ Random re-identification: 0.3%.
   match can be a near-equivalent control); ρ in standardized units would change the
   calibration; noise on C and on the moments was not added (favours the DP variant).
 
+### N19. What FedDSM's messages reveal, IST single-arm (E2b, 2026-11-17)
+
+Design fixed before the run: `docs/privacy_e2b.md` (a one-dataset pilot needed no changes).
+Code `src/privacy/feddsm_attacks.py` (tests check that the reproduced internals give FedDSM's
+own estimate and that the feature maps sum to the released sums), run
+`experiments/privacy/e2b_feddsm.py` → `results/privacy/e2b_feddsm/`. Same 10 IST single-arm
+datasets and seeds as the IST runs; non-members are IST patients outside each dataset (the
+loader's draw reproduced and checked); attacker knows the population and the target record
+(with its outcome for B′Y). FedDSM's basis on IST: 31 covariates, squares and products of the
+3 continuous ones, intercept (38 columns), so a fold cell releases D_eff ≈ 679 numbers.
+
+| Release (control sites) | Patients per release | AUROC (median) | TPR at 1% FPR (median) |
+|---|---|---|---|
+| Prognostic sums, per site and fold, ≤ 30 patients (64% of 450 cells) | 17–30 | 0.94 | 30% (max 67%) |
+| same, 60–150 patients | 60–150 | 0.85 | 9% |
+| same, 150–234 patients | 150–234 | 0.79 | 5% |
+| Propensity Newton sums, per site, final iterate | 88–150 | 0.80 | 7% |
+| same | 400–1,166 | 0.66 | 2% |
+
+- **Scores sent to the matcher:** with the site's candidate records, the exact (logit ê, m̂₀)
+  pair links 100% of controls to their record in all 10 datasets (two real numbers are a
+  fingerprint). Without records they reveal little: binary covariates 84.0% correct vs 82.1%
+  by guessing; standardized error 0.81 vs 0.87.
+- **Against Fed-GenMatch (N18, same data, all treated):** Fed-GenMatch's messages
+  reconstruct 94% of covariate values exactly, re-identify 98% of controls, and its
+  matched-set sums identify 92% of all controls exactly. FedDSM v0 reconstructs no covariate
+  values, but its small per-fold cells allow strong membership inference and its exact scores
+  are linkable.
+- **What the v1 proposal (`docs/feddsm_protocol.md`) addresses:** secure aggregation plus
+  folds defined across sites turn 45 cells of 17–234 patients into 5 cells of about 550,
+  D_eff/n ≈ 1.2 (E1: AUROC still about 0.7–0.8 for this attack); secure matching removes the
+  linkable scores. Bringing the prognostic release near AUROC 0.55 needs D/n ≈ 0.05
+  (E1), i.e. a reduced basis, far larger cells, or noise.
+- E1's Gaussian prediction overstates these AUROCs (e.g. 1.00 vs 0.94 in small cells), as E1
+  found for non-Gaussian features at large D/n. Newton's earlier iterates are not attacked, so
+  the propensity rows are lower bounds.
+
 ---
 
 ## Compatibility notes (no effect on results)
