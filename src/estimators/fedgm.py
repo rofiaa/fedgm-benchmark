@@ -15,6 +15,20 @@ Design (draft eqs. 2-13), single-arm ATT:
     ours are GA_DEFAULTS, with genes log10(w);
   - estimate: mean treated Y minus mean matched-control Y (no bias adjustment).
 
+Checked equation by equation in tests/test_fedgm.py (eq. 2 against a literal evaluation,
+eq. 8 against brute-force enumeration, eq. 10-12 against sample moments, the GA's
+best-seen and W = I start). Where the draft is silent or inconsistent, our choices:
+  - genes are log10(w) (the draft does not say on which scale BLX and the mutation act);
+    mutation hits each gene with probability 1/p, N(0, 0.25) in log10 units;
+  - the search is the population GA of the text, not Algorithm 1's single-candidate
+    accept-if-better loop;
+  - S_t singular (a covariate constant among the treated): pseudo-inverse square root,
+    so that direction does not enter the distance (the draft assumes S_t is PD);
+  - SMD with a zero denominator: 0 if the means are equal, inf otherwise;
+  - the effect is the ATT (treated mean minus matched-control mean); the draft's
+    results tables say "ATE";
+  - the DP variant (Laplace noise on B, C and the moments) is not implemented.
+
 Without noise the federated protocol is lossless: the coordinator reassembles
 D(W) = A - 2B + C exactly and pools the matched-control moments from per-site sums, so
 running it centrally gives the federated matches. `federated_objective` implements the
@@ -194,9 +208,11 @@ def estimate(df, estimand="FedGM", **cfg):
     return estimate_multi(df, [estimand], **cfg)[estimand]
 
 
-def estimate_multi(df, estimands=ESTIMANDS, sigma="treated_shrunk", m=1, seed=None,
+def estimate_multi(df, estimands=ESTIMANDS, sigma="treated_raw", m=1, seed=None,
                    ga_params=None, target="ATT"):
     """{estimand: result} for the ATT; one search serves "FedGM", "FedMaha" needs none.
+
+    The default sigma is the draft's (S_t); docs/fedgm_ablation.md runs all four arms.
 
     df: X1..Xd, W, Y (H is ignored: the protocol's result does not depend on how the
     controls are split over sites). Extras: max_smd_bret (the objective), fedgm_w
