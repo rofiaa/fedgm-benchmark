@@ -1,0 +1,250 @@
+% Privacy and sufficiency notes for the FedGM project (2026-11-16).
+% Self-contained; paste into Overleaf. Experiments: docs/findings.md N17 (E1), N18 (E2).
+% Not compiled locally (no LaTeX on the machine): check the build in Overleaf.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{hyperref}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}[proposition]{Lemma}
+\newtheorem{corollary}[proposition]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}[proposition]{Remark}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\rowsp}{row}
+\DeclareMathOperator{\range}{range}
+
+\title{What federated matching must share, and what it reveals}
+\author{FedGM project notes}
+\date{16 November 2026}
+
+\begin{document}
+\maketitle
+
+\paragraph{Scope.} Sites $k=1,\dots,K$ hold records $x\in\R^p$ (plus treatment and outcome);
+$n_k$ records at site $k$, $N=\sum_k n_k$. A \emph{release} is anything a site sends. We state
+(i) which sums suffice for each method's computations, (ii) what exact releases reveal
+unavoidably, (iii) membership inference on released means, (iv) reconstruction from the
+messages of the Fed-GenMatch draft (B.~Nestor), (v) per-patient sensitivities for a
+differentially private version, and (vi) known lower bounds. Statements marked
+\emph{(checked)} were verified numerically in the repository.
+
+\section{Sufficiency: what each computation needs}
+
+\begin{proposition}[Pooled moments from one round of sums]\label{prop:pooled}
+Let site $k$ send $n_k$, $T_k=\sum_{i\in k}x_i$ and $Q_k=\sum_{i\in k}x_ix_i^\top$. Then the
+pooled mean and covariance are
+\[
+\bar x=\frac{1}{N}\sum_k T_k,\qquad
+\hat S=\frac{1}{N-1}\Big(\sum_k Q_k-N\bar x\bar x^\top\Big).
+\]
+If only the diagonal is needed (per-covariate scaling, as in R's \texttt{GenMatch}, which
+z-scores each covariate and never uses a full covariance), the site sends $n_k$, $T_k$ and
+$q_k=\sum_{i\in k}x_i\circ x_i$: $2p+1$ numbers instead of $1+p+p(p+1)/2$.
+\end{proposition}
+\begin{proof}
+$\sum_i(x_i-\bar x)(x_i-\bar x)^\top=\sum_i x_ix_i^\top-N\bar x\bar x^\top$, and both terms
+are sums over sites. The diagonal uses only $\sum_i x_{il}^2$.
+\end{proof}
+
+\begin{remark}
+The average of the site covariances is not $\hat S$: it omits the between-site term
+$\sum_k n_k(\bar x_k-\bar x)(\bar x_k-\bar x)^\top/(N-1)$.
+\end{remark}
+
+\begin{proposition}[Exact outputs reveal the other site's sums when $K=2$]\label{prop:twosite}
+If the protocol's output includes $N$, $\bar x$ and $\hat S$ exactly, then with $K=2$ site 1
+learns $(n_2,T_2,Q_2)$ exactly, whatever the protocol (secure aggregation included):
+$n_2=N-n_1$, $T_2=N\bar x-T_1$, $Q_2=(N-1)\hat S+N\bar x\bar x^\top-Q_1$.
+\end{proposition}
+\noindent This is a lower bound on disclosure for exact computation: protecting the other site's
+sums with two sites requires noise on the output itself.
+
+\begin{proposition}[Fed-GenMatch's objective needs only matched-set sums]
+For a candidate $W$, let $\mathcal M_k(W)$ be the controls of site $k$ matched by the
+assignment. With the treated mean $\bar x^t$ and variances $s_t^2$ public (the draft's
+single-arm setting), the draft's imbalance $\max_l|\mathrm{SMD}_l(W)|$ is a function of
+$\big(n_k^*,\ \sum_{j\in\mathcal M_k}x_j,\ \sum_{j\in\mathcal M_k}x_j\circ x_j\big)_{k}$
+(the draft's eq.~10). It is not a function of these sums for KS- or $p$-value-based
+objectives, which need the matched controls' order statistics.
+\end{proposition}
+
+\begin{proposition}[FedDSM's fits are exact from sums]
+The logistic propensity MLE by Newton--Raphson needs, at each iterate $\beta$, the sums
+$\sum_i(w_i-p_i(\beta))x_i$ and $\sum_i p_i(\beta)(1-p_i(\beta))x_ix_i^\top$ (per site, then
+added). The least-squares prognostic score on a basis $b(x)$, cross-fitted over folds, needs
+per site and fold $\sum_i b(x_i)b(x_i)^\top$ and $\sum_i b(x_i)y_i$. Both give the pooled
+estimates exactly \emph{(checked)}.
+\end{proposition}
+
+\section{Membership inference on released means}\label{sec:mia}
+
+Let $\phi:\R^p\to\R^D$ be the released features (e.g.\ $x$ and $x\circ x$; $D=2p$), with
+population mean $\mu$ and covariance $\Sigma_\phi$ (full rank on its support). A group $G$ of $n$
+i.i.d.\ members is released as $\hat m=\frac1n\sum_{i\in G}\phi(x_i)$. The attacker knows the
+population and a target $x$, and scores $s(x)=(\phi(x)-\mu)^\top\Sigma_\phi^{-1}(\hat m-\mu)$
+(the whitened inner-product, or tracing, attack).
+
+\begin{proposition}\label{prop:mia}
+Write $u=\Sigma_\phi^{-1/2}(\phi(x)-\mu)$, so $\E u=0$, $\mathrm{Cov}\,u=I_D$, and let
+$V=\Var\|u\|^2$. For a non-member, $\E s=0$ and $\Var s=D/n$. For a member,
+$\E s=D/n$ and $\Var s=\{(n-1)D+V\}/n^2$. If $u\sim N(0,I_D)$ (so $V=2D$) and $s$ is
+approximately normal (large $D$),
+\[
+\mathrm{AUROC}\approx\Phi\!\Big(\sqrt{D/n}\,\big/\sqrt{2+1/n}\Big)\approx\Phi\big(\sqrt{D/(2n)}\big),
+\qquad
+\mathrm{TPR}(\alpha)\approx1-\Phi\big(z_{1-\alpha}-\sqrt{D/n}\big).
+\]
+\end{proposition}
+\begin{proof}
+Non-member: $s=u^\top\bar u$ with $\bar u=\frac1n\sum_{i\in G}u_i$ independent of $u$, so
+$\Var s=\E[u^\top\E(\bar u\bar u^\top)u]=\E\|u\|^2/n=D/n$. Member $x=x_1$:
+$s=\frac1n\|u_1\|^2+\frac1n u_1^\top\sum_{i\ge2}u_i$; the two terms are uncorrelated, with
+variances $V/n^2$ and $(n-1)D/n^2$. With normal scores, $\mathrm{AUROC}=\Phi\big(\Delta/\sqrt{\sigma_0^2+\sigma_1^2}\big)$.
+\end{proof}
+
+\begin{remark}[What the experiment shows]
+$n$ and $p$ enter only through $D/n$, the released numbers per patient: $D=2p$ for means and
+variances, $p+p(p+1)/2$ for the covariance, $\binom{p+4}{4}-1$ distinct moments for FedDSM's
+quadratic-basis fold sums. The formula reproduces the Nov.~4 pilot (e.g.\ $D=65$, $n=35$:
+0.83 and 16.8\% at 1\% FPR vs 0.85 and 16.9\%). In E1 it holds wherever $D/n\le1$; above, the
+attack falls below it (up to $-0.13$ AUROC), most for non-Gaussian features (products,
+fourth powers, log-normal data). Keeping the general $V$ over-corrects: the member scores are
+then skewed and the normal approximation of a rank statistic fails. The cause is open.
+\end{remark}
+
+\section{Reconstruction from Fed-GenMatch's cross terms}
+
+Notation of the draft: $S=\Sigma^{-1/2}$ symmetric (pseudo-inverse square root if $\Sigma$ is
+singular), $\tilde X_t\in\R^{n_t\times p}$ the public whitened treated rows, $z_j=Sx_j$ for
+control $j$, and at evaluation $g$ the cross terms $b_j^{(g)}=\tilde X_tW_gz_j\in\R^{n_t}$ with
+$W_g$ diagonal, known to the coordinator. After $G$ evaluations the coordinator knows
+$A_Gz_j$, $A_G=[\tilde X_tW_1;\dots;\tilde X_tW_G]$, so it knows the projection of $z_j$ on
+$\rowsp(A_G)=\sum_gW_g\,U$, where $U=\rowsp(\tilde X_t)$.
+
+\begin{lemma}[What can ever be exposed]\label{lem:exposed}
+Let $L=\{l:\ u_l\neq0\text{ for some }u\in U\}$. For diagonal $W$ ranging over any set with
+non-empty interior (e.g.\ the draft's box $[10^{-2},10^2]^p$),
+$\operatorname{span}\{Wu:\ W,\ u\in U\}=\operatorname{span}\{e_l: l\in L\}$, and finitely many
+generic $W_g$ reach it. Coordinates $l\notin L$ (those with $\tilde x_{t,il}=0$ for every treated
+$i$) are never exposed, whatever the search does.
+\end{lemma}
+\begin{proof}
+$Wu=\operatorname{diag}(u)\,w$ is linear in $w$; over a set with non-empty interior its span is
+$\range\operatorname{diag}(u)=\operatorname{span}\{e_l:u_l\neq0\}$. Sum over a basis of $U$.
+\end{proof}
+
+\begin{corollary}[The draft's normaliser exposes everything at once]\label{cor:oneeval}
+With $\Sigma=S_t$, $U=\range(S_t)$ and $z_j\in\range(S_t)$. At the first evaluation
+($W=I$) the coordinator recovers $z_j$ exactly, hence $x_j$ modulo $\ker S_t$ (the directions
+with no treated variation). No later evaluation adds anything.
+\end{corollary}
+\begin{proof}
+$\rowsp(X_tS)=S\operatorname{span}\{x_{t,i}\}\supseteq S\range(S_t)=\range(S_t)$, and
+$\rowsp(X_tS)\subseteq\range(S)=\range(S_t)$. If $\tilde X_tz=0$ with $z\in\range(S_t)$ then
+$z\in\range(S_t)\cap\range(S_t)^\perp=\{0\}$.
+\end{proof}
+\noindent E2 (IST single-arm, 31 covariates): full exposure after one evaluation in 10/10
+datasets at every cohort size; re-identification 80\% of controls at $n_t=20$, $>90\%$ from
+$n_t=31$. With a full-rank (shrunk) normaliser the exposed part saturates within 5
+evaluations but misses the covariates equal to 0 for all treated, as the lemma predicts.
+
+\section{The matched-set sums}
+
+At evaluation $g$ site $k$ sends $s_g=\sum_{j\in\mathcal M_g}x_j$ (and $n^*$, $\sum x\circ x$);
+the coordinator knows $\mathcal M_g$ because it solved the assignment. With $E$ the
+evaluations$\times$controls indicator matrix of site $k$, it knows $EX_k$.
+
+\begin{proposition}[Identification]\label{prop:matchedsets}
+$x_j$ is determined by the matched-set sums iff $e_j\in\rowsp(E)$; in particular if two
+evaluations' matched sets differ exactly by $\{j\}$. \emph{(E2: 97--99\% of the controls ever
+matched are identified, all 31 covariates; 91--92\% of all controls with the whole cohort.)}
+\end{proposition}
+
+\begin{lemma}[One control moves the matched set by at most one swap]\label{lem:swap}
+Consider the optimal $1{:}m$ assignment without replacement (draft eq.~8), assumed unique,
+before and after changing control $j$'s covariates (everything else fixed). Then the matched
+sets $\mathcal M,\mathcal M'$ satisfy $|(\mathcal M\triangle\mathcal M')\setminus\{j\}|\le2$:
+apart from $j$, at most one control leaves and one enters. Who is matched to whom can change for
+many treated. \emph{(Checked on 3,000 random instances: the set difference never exceeded 2,
+while up to 69\% of treated changed match.)}
+\end{lemma}
+\begin{proof}
+Duplicate each treated row $m$ times, so the assignment is a minimum-cost matching saturating
+the treated side. The symmetric difference of the old and new optimal matchings is a union of
+vertex-disjoint alternating paths and cycles; every treated vertex has degree 0 or 2 in it, so
+paths end at controls. A component $C$ not containing $j$ has the same edge costs in both
+instances, so swapping $C$ cannot strictly improve either matching; by uniqueness $C$ is
+empty. The one remaining component contains $j$; a cycle leaves the matched set unchanged, a
+path changes it by its two control endpoints, one leaving and one entering.
+\end{proof}
+
+\begin{corollary}[Per-evaluation sensitivity of the matched-set sums]
+Let covariate $l$ take values in an interval of length $r_l$ (and $x_l^2$ in one of length
+$r^{(2)}_l$). Replacing one control changes $\sum_{\mathcal M}x_l$ by at most $2r_l$ and
+$\sum_{\mathcal M}x_l^2$ by at most $2r^{(2)}_l$ (the changed control plus one swap), and the
+per-site counts by at most 1 at each of at most two sites. So the moments of eq.~9 have a bounded
+sensitivity, of the order of one record, under unique optima. (Ties need a fixed tie-break.)
+\end{corollary}
+
+\begin{remark}[Reconstruction barrier for subset sums]
+The matched-set sums are subset-sum queries on each site's records. For binary attributes,
+answers to $O(n\log^2n)$ random subset sums with error $o(\sqrt n)$ allow reconstruction of
+all but a vanishing fraction of the records (Dinur \& Nissim 2003; Dwork, McSherry \& Talwar
+2007). The search releases thousands of such sums per site (E2: 1,100--10,100 evaluations,
+median 2,250; sites of 92--1,161 controls), on sets that differ by single swaps, which makes the system
+easier to solve than random queries. Any protection of these sums therefore needs noise of
+order at least $\sqrt{n_k}$ per sum, or far fewer released sums.
+\end{remark}
+
+\section{Per-patient sensitivity of the cross terms and composition}
+
+Adjacency: replace one control, with records in a domain of $\ell_2$-diameter $\rho$ and norm at
+most $R$.
+
+\begin{proposition}\label{prop:sens}
+At one evaluation with weights $W$, replacing control $j$ changes only column $b_j$ and $C_j$:
+\[
+\|\Delta b_j\|_2\le\|\tilde X_tWS\|_2\,\rho,\qquad
+\|\Delta b_j\|_1\le\sum_{i=1}^{n_t}\|W\tilde x_{t,i}\|_2\,\|S\|_2\,\rho=\sum_i\Delta_i,\qquad
+|\Delta C_j|\le\|W\|_2\|S\|_2^2R^2,
+\]
+where $\Delta_i$ is the draft's per-entry sensitivity (eq.~14). Hence Laplace noise of scale
+$\Delta_i/\varepsilon$ on each entry, as in the draft, gives $n_t\varepsilon$-DP per evaluation
+for the cross terms alone, not $\varepsilon$; adding $C_j$ and the matched-set sums adds
+their own terms; over $G$ (adaptively chosen) evaluations, basic composition gives
+$G(n_t\varepsilon+\varepsilon_C+\varepsilon_{\mathrm{mom}})$.
+\end{proposition}
+\begin{proof}
+$\Delta b_j=\tilde X_tWS(x_j'-x_j)$; entry $i$ is $(SW\tilde x_{t,i})^\top(x'_j-x_j)$, bounded by
+$\|SW\tilde x_{t,i}\|_2\rho\le\|W\tilde x_{t,i}\|_2\|S\|_2\rho$; sum over $i$. For $C_j=z^\top Wz$
+with $z=Sx$, both values lie in $[0,\|W\|_2\|S\|_2^2R^2]$.
+\end{proof}
+
+\begin{remark}[Gaussian mechanism over the search]
+Releasing each evaluation's $(b_j,C_j)$ with Gaussian noise of variance
+$\sigma_g^2=\Delta_{2,g}^2/(2\varrho_g)$ is $\varrho_g$-zCDP; adaptive composition adds the
+$\varrho_g$, and $\varrho$-zCDP implies $(\varrho+2\sqrt{\varrho\ln(1/\delta)},\delta)$-DP (Bun \&
+Steinke 2016). For a fixed total budget split over $G$ evaluations, the noise per release grows
+like $\sqrt G$: about $70\times$ the single-release noise at $G\approx5{,}000$ (the median search
+length with all 235 treated, N15). E2 found that even single-release noise at the draft's calibration leaves no match
+unchanged, for $\varepsilon$ up to $1{,}000$ per entry.
+\end{remark}
+
+\section{Lower bounds to build on}
+
+\begin{enumerate}
+\item \emph{Exact outputs:} Proposition~\ref{prop:twosite}: with two sites, exact pooled mean
+  and covariance reveal the other site's sums; no protocol avoids it.
+\item \emph{Reconstruction:} the subset-sum barrier above (Dinur \& Nissim 2003).
+\item \emph{Price of privacy for shared means:} for $(\varepsilon,\delta)$-DP estimation of a
+  $d$-dimensional Gaussian mean, the minimax squared error is of order
+  $d/n+d^2\log(1/\delta)/(n^2\varepsilon^2)$ up to logarithmic factors (Cai, Wang \& Zhang 2021,
+  \emph{Ann.\ Statist.}); covariance estimation has analogous $d^2$-type terms (Kamath et
+  al.\ 2019). These bound the utility cost of privatising the statistics of
+  Section~1. \emph{To check against the papers before citing.}
+\end{enumerate}
+
+\end{document}

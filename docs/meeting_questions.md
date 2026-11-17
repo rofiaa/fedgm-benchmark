@@ -26,8 +26,11 @@ are open because the draft is silent or inconsistent:
    - Laplace noise is calibrated to ℓ1 sensitivity; eq. 14 bounds an ℓ2 quantity.
    - One control changes a whole column of B⁽ᵏ⁾ (n_t entries) plus C_j, so per-entry ε is not
      per-patient ε; C_j is quadratic in x and needs a bounded domain.
-   - The matched-set moments have no simple sensitivity: one control can reshuffle the optimal
-     assignment without replacement.
+   - The matched-set moments do have a bounded sensitivity, though eq. 14 omits it: changing
+     one control can reshuffle who is matched to whom (up to 69% of treated in our random
+     checks), but the *set* of matched controls changes by at most one swap plus that control
+     (proof in docs/privacy_math.tex; checked on 3,000 random instances). *Corrected
+     2026-11-16: an earlier version of this list said the sensitivity was unbounded.*
    - Composition over the search (median 5,000 releases in our runs) needs a number.
 7b. **Measured (E2, findings N18, IST single-arm):** with his S_t, one search evaluation
    exposes everything the protocol exposes; 80% of controls are re-identified at n_t = 20 and

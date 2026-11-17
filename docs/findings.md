@@ -982,8 +982,8 @@ Design: `docs/privacy_e2.md` (three changes after a one-task pilot, recorded the
 `experiments/privacy/e2_fedgm.py`, figures `experiments/privacy/plot_e2.py` →
 `results/privacy/e2_fedgm/`. IST single-arm, datasets 0–9, n_t ∈ {10, 20, 31, 50, all ≈ 238},
 the draft's normaliser S_t and the shrunk one; the coordinator sees exactly the draft's
-messages along the actual GA search (1,350–4,550 evaluations). 31 covariates, 2,765 controls
-at 9 country sites.
+messages along the actual GA search (1,100–10,100 evaluations, median 2,250). 31
+covariates, 2,765 controls at 9 country sites (92–1,161 each).
 
 | Mean over 10 datasets, 100 evaluations | n_t = 10 | 20 | 31 | 50 | all |
 |---|---|---|---|---|---|
